@@ -1,6 +1,6 @@
 # YouTube Video Transcription and Summarization Tool
 
-This Python script downloads YouTube videos as MP3, transcribes them using NVIDIA Parakeet, and generates summaries using either DeepSeek API or local Ollama models.
+This Python script downloads YouTube videos as MP3, transcribes them using NVIDIA Parakeet (or downloads subtitles directly when available), and generates summaries using either DeepSeek API or local Ollama models.
 
 ## Quick Start
 
@@ -21,6 +21,7 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ## Features
 
 - Download YouTube videos as MP3 audio
+- Download subtitles directly when available (faster than audio transcription)
 - Transcribe audio to text using NVIDIA Parakeet (with punctuation and capitalization)
 - Generate summaries using DeepSeek API or local Ollama models
 - Automatic file naming with timestamps
@@ -152,14 +153,15 @@ python3 transcribe_yt.py --model ollama --ollama-model "qwen3:1.7b" "https://www
 - `--output-dir, -o`: Output directory (default: `transcripts/`)
 - `--model`: Summary model to use: `deepseek` or `ollama` (default: `deepseek`)
 - `--ollama-model`: Ollama model name (default: `qwen3:32b`)
+- `--force-transcribe`: Force audio transcription even if subtitles are available
 
 ## Workflow
 
-The tool follows this 4-step process:
+The tool follows this smart 4-step process:
 
-1. **Download**: Downloads YouTube video as MP3 using `yt-dlp`
-2. **Convert**: Converts MP3 to WAV format using `ffmpeg`
-3. **Transcribe**: Converts audio to text using NVIDIA Parakeet
+1. **Check Subtitles**: Attempts to download English subtitles directly using `yt-dlp` (faster and more accurate)
+2. **Fallback to Audio**: If no subtitles available, downloads YouTube video as MP3 using `yt-dlp`
+3. **Transcribe**: Converts audio to text using NVIDIA Parakeet (only if no subtitles available)
 4. **Summarize**: Generates a summary using either DeepSeek API or local Ollama model
 
 ## Output Files
@@ -201,6 +203,12 @@ python3 transcribe_yt.py --model ollama --ollama-model "qwen3:1.7b" "https://www
 ```bash
 # Save all files to a dedicated directory
 python3 transcribe_yt.py --output-dir ~/transcriptions "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+### Example 4: Force Audio Transcription
+```bash
+# Force audio transcription even if subtitles are available
+python3 transcribe_yt.py --force-transcribe "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
 ## Testing
