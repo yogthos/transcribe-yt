@@ -419,6 +419,7 @@ def main():
 
         txt_path = None
         mp3_path = None
+        srt_path = None
 
         # Step 1: Try to download subtitles first (unless forced to transcribe)
         if not args.force_transcribe:
@@ -448,6 +449,9 @@ def main():
         if mp3_path and os.path.exists(mp3_path):
             os.remove(mp3_path)
             print(f"Removed: {mp3_path}")
+        if srt_path and os.path.exists(srt_path):
+            os.remove(srt_path)
+            print(f"Removed: {srt_path}")
         if txt_path and os.path.exists(txt_path):
             os.remove(txt_path)
             print(f"Removed: {txt_path}")
