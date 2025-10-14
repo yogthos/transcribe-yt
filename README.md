@@ -11,6 +11,9 @@ cd transcribe-yt
 # Install dependencies
 ./setup.sh
 
+# activate environment
+source venv/bin/activate
+
 # Run with a YouTube URL
 python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```

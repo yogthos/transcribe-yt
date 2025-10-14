@@ -170,7 +170,7 @@ def generate_summary_deepseek(transcription_path: str, api_key: str) -> str:
         print(f"Warning: Transcript is very long (~{estimated_tokens:,} tokens). DeepSeek may truncate very long content.")
 
     prompt = f"""Please provide a comprehensive summary of the following transcribed content.
-Focus on the main points, key insights, and important details:
+Focus on the main points, key insights, and important details. Make sure not to omit details:
 
 {transcription}
 
