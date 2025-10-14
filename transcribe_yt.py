@@ -2,7 +2,7 @@
 """
 YouTube Video Transcription and Summarization Tool
 
-This script downloads YouTube videos as MP3, transcribes them using WhisperX,
+This script downloads YouTube videos as MP3, transcribes them using NVIDIA Parakeet,
 and generates summaries using either DeepSeek API or local Ollama models.
 """
 
@@ -14,6 +14,12 @@ import json
 import requests
 from datetime import datetime
 from pathlib import Path
+
+try:
+    import nemo.collections.asr as nemo_asr
+except ImportError:
+    print("Warning: nemo_toolkit not installed. Please install with: pip install -U nemo_toolkit[\"asr\"]")
+    nemo_asr = None
 
 
 def download_audio(url: str, output_dir: str = ".") -> str:
@@ -57,9 +63,38 @@ def download_audio(url: str, output_dir: str = ".") -> str:
         raise RuntimeError(f"Failed to download audio: {e}")
 
 
+def convert_to_wav(mp3_path: str) -> str:
+    """
+    Convert MP3 file to WAV format for Parakeet
+
+    Args:
+        mp3_path: Path to the MP3 file
+
+    Returns:
+        Path to the converted WAV file
+    """
+    mp3_path = Path(mp3_path)
+    wav_path = mp3_path.with_suffix(".wav")
+
+    print(f"Converting {mp3_path} to WAV format...")
+
+    # Use ffmpeg to convert MP3 to WAV with 16kHz sample rate
+    cmd = ["ffmpeg", "-i", str(mp3_path), "-ac", "1", "-ar", "16000", "-y", str(wav_path)]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        if wav_path.exists():
+            print(f"Converted to: {wav_path}")
+            return str(wav_path)
+        else:
+            raise FileNotFoundError(f"Converted WAV file not found: {wav_path}")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to convert audio to WAV: {e}")
+
+
 def transcribe_audio(mp3_path: str) -> str:
     """
-    Transcribe audio file using Whisper
+    Transcribe audio file using NVIDIA Parakeet
 
     Args:
         mp3_path: Path to the MP3 file
@@ -67,27 +102,46 @@ def transcribe_audio(mp3_path: str) -> str:
     Returns:
         Path to the transcription text file
     """
+    if nemo_asr is None:
+        raise RuntimeError("nemo_toolkit not installed. Please install with: pip install -U nemo_toolkit[\"asr\"]")
+
     mp3_path = Path(mp3_path)
     txt_path = mp3_path.with_suffix(".txt")
 
-    print(f"Transcribing audio: {mp3_path}")
-
-    cmd = ["uvx", "whisper", str(mp3_path), "--model", "base", "--output_format", "txt", "--output_dir", str(mp3_path.parent)]
+    print(f"Transcribing audio using NVIDIA Parakeet: {mp3_path}")
 
     try:
-        subprocess.run(cmd, check=True, timeout=300)
+        # Convert MP3 to WAV format
+        wav_path = convert_to_wav(mp3_path)
 
-        # Whisper outputs txt file directly
-        if txt_path.exists():
+        # Load Parakeet model
+        print("Loading NVIDIA Parakeet TDT 0.6B v2 model...")
+        asr_model = nemo_asr.models.ASRModel.from_pretrained(model_name="nvidia/parakeet-tdt-0.6b-v2")
+
+        # Transcribe audio
+        print("Transcribing audio...")
+        output = asr_model.transcribe([wav_path])
+
+        if output and len(output) > 0:
+            transcription = output[0].text
+
+            # Save transcription to file
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(transcription)
+
             print(f"Transcription saved to: {txt_path}")
+
+            # Clean up temporary WAV file
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+                print(f"Removed temporary WAV file: {wav_path}")
+
             return str(txt_path)
         else:
-            raise FileNotFoundError(f"Transcription text file not found: {txt_path}")
+            raise RuntimeError("No transcription output received from Parakeet")
 
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to transcribe audio: {e}")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Transcription timed out after 5 minutes")
+    except Exception as e:
+        raise RuntimeError(f"Failed to transcribe audio with Parakeet: {e}")
 
 
 def generate_summary_deepseek(transcription_path: str, api_key: str) -> str:
@@ -232,6 +286,19 @@ Summary:"""
         raise RuntimeError(f"Failed to generate summary with Ollama: {e}")
 
 
+def check_dependencies():
+    """Check if required dependencies are available"""
+    # Check if ffmpeg is available
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("ffmpeg not found. Please install ffmpeg to use audio conversion features.")
+
+    # Check if nemo_toolkit is available
+    if nemo_asr is None:
+        raise RuntimeError("nemo_toolkit not installed. Please install with: pip install -U nemo_toolkit[\"asr\"]")
+
+
 def main():
     parser = argparse.ArgumentParser(description="YouTube Video Transcription and Summarization Tool")
     parser.add_argument("url", help="YouTube video URL")
@@ -244,6 +311,9 @@ def main():
     args = parser.parse_args()
 
     try:
+        # Check dependencies
+        check_dependencies()
+
         # Step 1: Download audio
         mp3_path = download_audio(args.url, args.output_dir)
 

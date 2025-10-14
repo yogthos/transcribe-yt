@@ -1,1 +1,19 @@
-requests
+# YouTube Transcription and Summarization Tool Requirements
+
+# Core dependencies
+requests>=2.25.0
+
+# Audio processing
+nemo_toolkit[asr]>=1.21.0
+
+# Note: ffmpeg must be installed separately via system package manager:
+# macOS: brew install ffmpeg
+# Ubuntu/Debian: sudo apt install ffmpeg
+# Windows: Download from https://ffmpeg.org/download.html
+
+# YouTube download
+yt-dlp>=2024.4.9
+
+# Specific versions for compatibility (tested working)
+onnx==1.18.0
+protobuf==5.29.5

@@ -1,6 +1,6 @@
 # YouTube Video Transcription and Summarization Tool
 
-This Python script downloads YouTube videos as MP3, transcribes them using WhisperX, and generates summaries using either DeepSeek API or local Ollama models.
+This Python script downloads YouTube videos as MP3, transcribes them using NVIDIA Parakeet, and generates summaries using either DeepSeek API or local Ollama models.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ## Features
 
 - Download YouTube videos as MP3 audio
-- Transcribe audio to text using WhisperX
+- Transcribe audio to text using NVIDIA Parakeet (with punctuation and capitalization)
 - Generate summaries using DeepSeek API or local Ollama models
 - Automatic file naming with timestamps
 - Support for custom output directories
@@ -28,8 +28,8 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
 ### Required Tools
 - `yt-dlp` - for downloading YouTube videos
-- `uvx` - for running WhisperX
-- Python 3.7+ with `requests` library
+- `ffmpeg` - for audio format conversion
+- Python 3.7+ with `requests` and `nemo_toolkit[asr]` libraries
 
 ### Optional Dependencies
 - DeepSeek API key (for DeepSeek summaries)
@@ -51,11 +51,8 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
    **On macOS (using Homebrew):**
    ```bash
-   # Install yt-dlp
-   brew install yt-dlp
-
-   # Install uv (for uvx)
-   curl -LsSf https://astral.sh/uv/install.sh | sh
+   # Install yt-dlp and ffmpeg
+   brew install yt-dlp ffmpeg
    ```
 
    **On Linux/Ubuntu:**
@@ -63,8 +60,8 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
    # Install yt-dlp
    pipx install yt-dlp
 
-   # Install uv
-   curl -LsSf https://astral.sh/uv/install.sh | sh
+   # Install ffmpeg
+   sudo apt update && sudo apt install ffmpeg
    ```
 
    **On Windows (using WSL or PowerShell):**
@@ -72,8 +69,8 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
    # Install yt-dlp
    pip install yt-dlp
 
-   # Install uv
-   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+   # Install ffmpeg - download from https://ffmpeg.org/download.html
+   # or use chocolatey: choco install ffmpeg
    ```
 
 2. Set up Python dependencies:
@@ -158,8 +155,9 @@ python3 transcribe_yt.py --model ollama --ollama-model "qwen3:1.7b" "https://www
 The tool follows this 4-step process:
 
 1. **Download**: Downloads YouTube video as MP3 using `yt-dlp`
-2. **Transcribe**: Converts audio to text using `whisperx`
-3. **Summarize**: Generates a summary using either DeepSeek API or local Ollama model
+2. **Convert**: Converts MP3 to WAV format using `ffmpeg`
+3. **Transcribe**: Converts audio to text using NVIDIA Parakeet
+4. **Summarize**: Generates a summary using either DeepSeek API or local Ollama model
 
 ## Output Files
 
@@ -218,22 +216,29 @@ python3 test_basic.py
    - Install using: `brew install yt-dlp` (macOS) or `pipx install yt-dlp` (Linux)
    - Or run the setup script: `./setup.sh`
 
-2. **uvx not found**:
-   - Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-   - Make sure `~/.cargo/bin` is in your PATH
+2. **ffmpeg not found**:
+   - Install using: `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux)
+   - On Windows, download from https://ffmpeg.org/download.html
 
-3. **DEEPSEEK_API_KEY not set**:
+3. **nemo_toolkit not installed**:
+   ```bash
+   # Activate virtual environment and install
+   source venv/bin/activate
+   pip install -U nemo_toolkit["asr"]
+   ```
+
+4. **DEEPSEEK_API_KEY not set**:
    ```bash
    export DEEPSEEK_API_KEY="your-api-key-here"
    # Add to your shell profile for persistence
    echo 'export DEEPSEEK_API_KEY="your-api-key-here"' >> ~/.zshrc
    ```
 
-4. **Ollama connection refused**:
+5. **Ollama connection refused**:
    - Make sure Ollama is installed and running: `ollama serve`
    - Check if service is running: `curl http://localhost:11434/api/tags`
 
-5. **Python dependencies missing**:
+6. **Python dependencies missing**:
    ```bash
    # Activate virtual environment and install
    source venv/bin/activate
@@ -243,7 +248,8 @@ python3 test_basic.py
 ### Error Messages
 
 - **"Failed to download audio"**: Check YouTube URL, internet connection, and yt-dlp installation
-- **"Failed to transcribe audio"**: Verify WhisperX installation and audio file integrity
+- **"Failed to convert audio to WAV"**: Verify ffmpeg installation and audio file integrity
+- **"Failed to transcribe audio"**: Verify NVIDIA Parakeet installation and audio file integrity
 - **"Failed to generate summary"**: Check API key validity or Ollama service status
 - **"ModuleNotFoundError: No module named 'requests'"**: Activate virtual environment and install dependencies
 

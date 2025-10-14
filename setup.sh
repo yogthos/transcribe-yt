@@ -47,15 +47,20 @@ else
     echo "✅ yt-dlp is already installed"
 fi
 
-# Install uv (for uvx)
-if ! command -v uvx &> /dev/null; then
-    echo "📥 Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    echo "✅ uv installed"
-    # Add uv to PATH for current session
-    export PATH="$HOME/.cargo/bin:$PATH"
+# Install ffmpeg
+if ! command -v ffmpeg &> /dev/null; then
+    echo "📥 Installing ffmpeg..."
+    if command -v brew &> /dev/null; then
+        brew install ffmpeg
+    elif command -v apt &> /dev/null; then
+        sudo apt update && sudo apt install -y ffmpeg
+    else
+        echo "⚠️  Please install ffmpeg manually from https://ffmpeg.org/download.html"
+        exit 1
+    fi
+    echo "✅ ffmpeg installed"
 else
-    echo "✅ uv is already installed"
+    echo "✅ ffmpeg is already installed"
 fi
 
 # Set up Python virtual environment
