@@ -220,6 +220,8 @@ python3 transcribe_yt.py --model ollama --ollama-model "qwen3:1.7b" "https://www
 - `--model`: Summary model to use: `deepseek` or `ollama` (default: `deepseek`)
 - `--ollama-model`: Ollama model name (default: `qwen3:32b`)
 - `--force-transcribe`: Force audio transcription even if subtitles are available
+- `--chunk-duration`: Audio chunk duration in seconds for large files (default: 300)
+- `--overlap-duration`: Overlap between audio chunks in seconds (default: 30)
 
 ## Workflow
 
@@ -244,6 +246,30 @@ transcripts/
 ```
 
 All files are automatically organized under the `transcripts/` folder by default.
+
+## Memory Optimization
+
+For large audio files, the tool automatically uses chunked processing to manage memory usage:
+
+- **Automatic Chunking**: Files longer than 5 minutes are automatically split into chunks
+- **Configurable Chunk Size**: Use `--chunk-duration` to set chunk size (default: 300 seconds)
+- **Overlap Handling**: Chunks overlap by 30 seconds to maintain context (configurable with `--overlap-duration`)
+- **Memory-Efficient Processing**: Each chunk is processed separately to prevent memory overflow
+
+### Configuration
+
+Set default memory optimization settings:
+
+```bash
+# Set chunk duration to 10 minutes
+python3 transcribe_yt.py --set-chunk-duration 600
+
+# Set overlap to 1 minute
+python3 transcribe_yt.py --set-overlap-duration 60
+
+# View current settings
+python3 transcribe_yt.py --show-config
+```
 
 ## Examples
 

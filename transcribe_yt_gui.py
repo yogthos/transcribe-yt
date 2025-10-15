@@ -374,7 +374,8 @@ Features:
                 GLib.idle_add(self.update_progress, 0.4, "Downloading audio...")
                 mp3_path = download_audio(url, output_dir)
                 GLib.idle_add(self.update_progress, 0.6, "Transcribing audio...")
-                txt_path = transcribe_audio(mp3_path)
+                # Use default chunking parameters for GUI (5min chunks, 30s overlap)
+                txt_path = transcribe_audio(mp3_path, chunk_duration=300, overlap_duration=30)
 
             # Step 3: Generate summary
             GLib.idle_add(self.update_progress, 0.7, "Generating summary...")

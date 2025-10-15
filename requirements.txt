@@ -5,6 +5,8 @@ requests>=2.25.0
 
 # Audio processing
 nemo_toolkit[asr]>=1.21.0
+librosa>=0.10.0
+soundfile>=0.12.0
 
 # Note: ffmpeg must be installed separately via system package manager:
 # macOS: brew install ffmpeg
