@@ -27,6 +27,44 @@ For a user-friendly graphical interface, use the GTK GUI:
 python3 run_gui.py
 ```
 
+## macOS App Bundle
+
+Create a distributable .app bundle for macOS:
+
+### Quick Start
+```bash
+# Make the script executable and run it
+chmod +x create_app.sh
+./create_app.sh
+```
+
+### Manual Packaging
+
+#### Option 1: Simple .app Bundle (Development)
+```bash
+# Create a simple .app bundle with virtual environment
+python3 package_app.py
+```
+
+#### Option 2: PyInstaller Bundle (Distribution)
+```bash
+# Create a standalone .app bundle using PyInstaller
+python3 build_app.py
+```
+
+### App Bundle Features
+- **Standalone Application**: No need to install Python or dependencies
+- **macOS Integration**: Proper .app bundle with Info.plist
+- **Document Support**: Can handle YouTube URLs from Finder
+- **High Resolution**: Supports Retina displays
+- **Distribution Ready**: Can be zipped and shared
+
+### Distribution
+```bash
+# Create a distributable zip file
+zip -r TranscribeYouTube.zip TranscribeYouTube.app
+```
+
 The GUI provides:
 - Easy URL input with validation
 - Real-time progress tracking
