@@ -18,8 +18,73 @@ source venv/bin/activate
 python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
+## GUI Usage
+
+For a user-friendly graphical interface, use the GTK GUI:
+
+```bash
+# Run the GUI
+python3 run_gui.py
+```
+
+## macOS App Bundle
+
+Create a distributable .app bundle for macOS:
+
+### Quick Start
+```bash
+# Make the script executable and run it
+chmod +x create_app.sh
+./create_app.sh
+```
+
+### Manual Packaging
+
+#### Option 1: Simple .app Bundle (Development)
+```bash
+# Create a simple .app bundle with virtual environment
+python3 package_app.py
+```
+
+#### Option 2: PyInstaller Bundle (Distribution)
+```bash
+# Create a standalone .app bundle using PyInstaller
+python3 build_app.py
+```
+
+### App Bundle Features
+- **Standalone Application**: No need to install Python or dependencies
+- **macOS Integration**: Proper .app bundle with Info.plist
+- **Document Support**: Can handle YouTube URLs from Finder
+- **High Resolution**: Supports Retina displays
+- **Distribution Ready**: Can be zipped and shared
+
+### Distribution
+```bash
+# Create a distributable zip file
+zip -r TranscribeYouTube.zip TranscribeYouTube.app
+```
+
+The GUI provides:
+- Easy URL input with validation
+- Real-time progress tracking
+- Configuration management for API keys
+- Markdown summary display
+- Model selection (DeepSeek API or Ollama)
+- Output directory customization
+
+### GUI Features
+
+1. **Input Section**: Enter YouTube URLs and configure output settings
+2. **Progress Tracking**: Real-time progress bar and status updates
+3. **Summary Display**: View generated summaries in a scrollable text area
+4. **Configuration**: Set up API keys and model preferences
+5. **Error Handling**: User-friendly error messages and dialogs
+
 ## Features
 
+- **Command Line Interface**: Full-featured CLI for automated processing
+- **Graphical User Interface**: Easy-to-use GTK GUI for interactive transcription
 - Download YouTube videos as MP3 audio
 - Download subtitles directly when available (faster than audio transcription)
 - Transcribe audio to text using NVIDIA Parakeet (with punctuation and capitalization)
@@ -27,6 +92,7 @@ python3 transcribe_yt.py "https://www.youtube.com/watch?v=VIDEO_ID"
 - Automatic file naming with timestamps
 - Support for custom output directories
 - Error handling and progress reporting
+- Configuration management for API keys and settings
 
 ## Prerequisites
 

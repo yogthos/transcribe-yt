@@ -17,3 +17,12 @@ yt-dlp>=2024.4.9
 # Specific versions for compatibility (tested working)
 onnx==1.18.0
 protobuf==5.29.5
+
+# GUI dependencies
+PyGObject>=3.42.0
+markdown>=3.4.0
+beautifulsoup4>=4.9.0
+# Note: GtkHTML is typically provided by the system GTK installation
+
+# Packaging dependencies (optional)
+pyinstaller>=5.0.0
