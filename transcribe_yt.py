@@ -22,6 +22,51 @@ except ImportError:
     nemo_asr = None
 
 
+def get_config_path():
+    """Get the path to the configuration file"""
+    return os.path.expanduser("~/.transcribe-yt/config.json")
+
+
+def load_config():
+    """Load configuration from ~/.transcribe-yt/config.json"""
+    config_path = get_config_path()
+    default_config = {
+        "deepseek_api_key": None,
+        "ollama_model": "qwen3:32b"
+    }
+
+    if not os.path.exists(config_path):
+        return default_config
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        # Merge with defaults to ensure all keys exist
+        for key, value in default_config.items():
+            if key not in config:
+                config[key] = value
+        return config
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Warning: Could not load config file: {e}")
+        return default_config
+
+
+def save_config(config):
+    """Save configuration to ~/.transcribe-yt/config.json"""
+    config_path = get_config_path()
+    config_dir = os.path.dirname(config_path)
+
+    # Create config directory if it doesn't exist
+    Path(config_dir).mkdir(parents=True, exist_ok=True)
+
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2)
+        print(f"Configuration saved to: {config_path}")
+    except IOError as e:
+        raise RuntimeError(f"Could not save config file: {e}")
+
+
 def download_subtitles(url: str, output_dir: str = ".") -> str:
     """
     Download YouTube video subtitles using yt-dlp
@@ -402,8 +447,8 @@ def check_dependencies():
 
 def main():
     parser = argparse.ArgumentParser(description="YouTube Video Transcription and Summarization Tool")
-    parser.add_argument("url", help="YouTube video URL")
-    parser.add_argument("--output-dir", "-o", default="transcripts", help="Output directory (default: transcripts/)")
+    parser.add_argument("url", nargs="?", help="YouTube video URL")
+    parser.add_argument("--output-dir", "-o", default="~/.transcribe-yt/transcripts", help="Output directory (default: ~/.transcribe-yt/transcripts)")
     parser.add_argument("--model", choices=["deepseek", "ollama"], default="deepseek",
                        help="Summary model to use (default: deepseek)")
     parser.add_argument("--ollama-model", default="qwen3:32b",
@@ -411,7 +456,45 @@ def main():
     parser.add_argument("--force-transcribe", action="store_true",
                        help="Force audio transcription even if subtitles are available")
 
+    # Configuration management options
+    parser.add_argument("--set-api-key", help="Set DeepSeek API key in configuration")
+    parser.add_argument("--show-config", action="store_true", help="Show current configuration")
+    parser.add_argument("--config-dir", help="Show configuration directory path")
+
     args = parser.parse_args()
+
+    # Handle configuration management commands
+    if args.set_api_key:
+        config = load_config()
+        config["deepseek_api_key"] = args.set_api_key
+        save_config(config)
+        print("DeepSeek API key saved to configuration")
+        return
+
+    if args.show_config:
+        config = load_config()
+        print("Current configuration:")
+        for key, value in config.items():
+            if key == "deepseek_api_key" and value:
+                # Mask the API key for security
+                masked_value = value[:8] + "*" * (len(value) - 8) if len(value) > 8 else "*" * len(value)
+                print(f"  {key}: {masked_value}")
+            else:
+                print(f"  {key}: {value}")
+        return
+
+    if args.config_dir:
+        print(f"Configuration directory: {os.path.dirname(get_config_path())}")
+        return
+
+    # Require URL for main functionality
+    if not args.url:
+        parser.error("YouTube video URL is required for transcription")
+
+    # Expand the output directory path and ensure it exists
+    output_dir = os.path.expanduser(args.output_dir)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    args.output_dir = output_dir
 
     try:
         # Check dependencies
@@ -437,12 +520,15 @@ def main():
 
         # Step 3: Generate summary
         if args.model == "deepseek":
-            api_key = os.getenv("DEEPSEEK_API_KEY")
+            config = load_config()
+            api_key = config.get("deepseek_api_key")
             if not api_key:
-                raise ValueError("DEEPSEEK_API_KEY environment variable not set")
+                raise ValueError("DeepSeek API key not set. Use --set-api-key to configure it.")
             md_path = generate_summary_deepseek(txt_path, api_key)
         else:
-            md_path = generate_summary_ollama(txt_path, args.ollama_model)
+            config = load_config()
+            ollama_model = config.get("ollama_model", args.ollama_model)
+            md_path = generate_summary_ollama(txt_path, ollama_model)
 
         # Step 4: Clean up intermediate files
         print("\nCleaning up intermediate files...")
