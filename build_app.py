@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script for creating a macOS .app bundle using PyInstaller
+Build script for creating a macOS .app bundle without PyInstaller issues
 """
 
 import os
@@ -9,165 +9,214 @@ import subprocess
 import shutil
 from pathlib import Path
 
-def install_pyinstaller():
-    """Install PyInstaller if not already installed"""
-    try:
-        import PyInstaller
-        print("✅ PyInstaller is already installed")
-        return True
-    except ImportError:
-        print("Installing PyInstaller...")
-        try:
-            subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
-            print("✅ PyInstaller installed successfully")
-            return True
-        except subprocess.CalledProcessError:
-            print("❌ Failed to install PyInstaller")
-            return False
+def create_app_bundle():
+    """Create the macOS .app bundle structure"""
 
-def create_spec_file():
-    """Create a PyInstaller spec file for the app"""
-    spec_content = '''# -*- mode: python ; coding: utf-8 -*-
+    # App bundle name and paths
+    app_name = "TranscribeYouTube"
+    app_bundle_path = f"dist/{app_name}.app"
+    contents_path = f"{app_bundle_path}/Contents"
+    macos_path = f"{contents_path}/MacOS"
+    resources_path = f"{contents_path}/Resources"
 
-block_cipher = None
+    print(f"Creating {app_name}.app bundle...")
 
-a = Analysis(
-    ['transcribe_yt_gui.py'],
-    pathex=[],
-    binaries=[],
-    datas=[
-        ('transcribe_yt.py', '.'),
-        ('requirements.txt', '.'),
-        ('README.md', '.'),
-    ],
-    hiddenimports=[
-        'gi',
-        'gi.repository.Gtk',
-        'gi.repository.Gdk',
-        'gi.repository.GLib',
-        'gi.repository.Pango',
-        'markdown',
-        'beautifulsoup4',
-        'requests',
-        'nemo.collections.asr',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
+    # Remove existing bundle if it exists
+    if os.path.exists(app_bundle_path):
+        print(f"Removing existing {app_bundle_path}...")
+        shutil.rmtree(app_bundle_path)
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+    # Create directory structure
+    os.makedirs(macos_path, exist_ok=True)
+    os.makedirs(resources_path, exist_ok=True)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='TranscribeYouTube',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon='app_icon.icns' if os.path.exists('app_icon.icns') else None,
-)
+    # Create Info.plist
+    info_plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>{app_name}</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.transcribeyt.app</string>
+    <key>CFBundleName</key>
+    <string>{app_name}</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSAppleScriptEnabled</key>
+    <false/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>YouTube URL</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.url</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>"""
 
-app = BUNDLE(
-    exe,
-    name='TranscribeYouTube.app',
-    icon='app_icon.icns' if os.path.exists('app_icon.icns') else None,
-    bundle_identifier='com.transcribeyt.app',
-    info_plist={
-        'CFBundleName': 'Transcribe YouTube',
-        'CFBundleDisplayName': 'Transcribe YouTube',
-        'CFBundleVersion': '1.0',
-        'CFBundleShortVersionString': '1.0',
-        'CFBundleIdentifier': 'com.transcribeyt.app',
-        'NSHighResolutionCapable': True,
-        'LSMinimumSystemVersion': '10.15',
-        'CFBundleDocumentTypes': [
-            {
-                'CFBundleTypeName': 'YouTube URL',
-                'CFBundleTypeRole': 'Viewer',
-                'LSItemContentTypes': ['public.url'],
-            }
-        ],
-    },
-)
-'''
+    with open(f"{contents_path}/Info.plist", "w") as f:
+        f.write(info_plist_content)
 
-    with open('TranscribeYouTube.spec', 'w') as f:
-        f.write(spec_content)
+    # Create the main executable script
+    launcher_script = f"""#!/bin/bash
+# Get the path to the app bundle
+APP_BUNDLE_PATH="$(dirname "$(dirname "$(realpath "$0")")")"
+RESOURCES_PATH="$APP_BUNDLE_PATH/Resources"
+VENV_PATH="$RESOURCES_PATH/venv"
+VENV_PYTHON="$VENV_PATH/bin/python"
 
-    print("✅ PyInstaller spec file created")
+# Change to the resources directory
+cd "$RESOURCES_PATH"
 
-def build_app():
-    """Build the .app bundle using PyInstaller"""
-    print("Building .app bundle with PyInstaller...")
+# Add the app bundle's bin directory to PATH for ffmpeg and yt-dlp
+export PATH="$RESOURCES_PATH/bin:$PATH"
 
-    try:
-        # Run PyInstaller
-        cmd = [sys.executable, "-m", "PyInstaller", "--clean", "TranscribeYouTube.spec"]
-        subprocess.run(cmd, check=True)
+# Check if virtual environment exists
+if [ ! -f "$VENV_PYTHON" ]; then
+    echo "Error: Virtual environment not found at $VENV_PATH"
+    echo "Please run the packaging script again."
+    exit 1
+fi
 
-        # Check if the app was created
-        app_path = "dist/TranscribeYouTube.app"
-        if os.path.exists(app_path):
-            print(f"✅ App bundle created successfully: {app_path}")
-            return True
-        else:
-            print("❌ App bundle not found after build")
-            return False
+# Run the GUI using the virtual environment Python
+exec "$VENV_PYTHON" -c "
+import sys
+import os
 
-    except subprocess.CalledProcessError as e:
-        print(f"❌ PyInstaller build failed: {e}")
-        return False
+# Add the resources path to Python path
+sys.path.insert(0, '$RESOURCES_PATH')
 
-def create_simple_icon():
-    """Create a simple icon file (placeholder)"""
-    # This is a placeholder - in a real app, you'd want a proper .icns file
-    icon_content = """# Transcribe YouTube App Icon
-# This is a placeholder
-# For production, replace with a proper .icns file
+try:
+    from transcribe_yt_gui import main
+    main()
+except ImportError as e:
+    print(f'Error importing GUI module: {{e}}')
+    print('Make sure all dependencies are installed in the virtual environment.')
+    print(f'Virtual environment path: $VENV_PATH')
+    print(f'Python executable: $VENV_PYTHON')
+    sys.exit(1)
+except Exception as e:
+    print(f'Error running GUI: {{e}}')
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+"
 """
 
-    with open('app_icon.txt', 'w') as f:
-        f.write(icon_content)
+    launcher_path = f"{macos_path}/{app_name}"
+    with open(launcher_path, "w") as f:
+        f.write(launcher_script)
 
-    print("✅ Placeholder icon created (replace with .icns for production)")
+    # Make the launcher executable
+    os.chmod(launcher_path, 0o755)
 
-def cleanup():
-    """Clean up build artifacts"""
-    cleanup_dirs = ['build', '__pycache__']
-    cleanup_files = ['TranscribeYouTube.spec', 'app_icon.txt']
+    # Copy application files to Resources
+    print("Copying application files...")
+    files_to_copy = [
+        "transcribe_yt_gui.py",
+        "transcribe_yt.py",
+        "requirements.txt",
+        "README.md"
+    ]
 
-    for dir_name in cleanup_dirs:
-        if os.path.exists(dir_name):
-            shutil.rmtree(dir_name)
-            print(f"Cleaned up {dir_name}")
+    for file in files_to_copy:
+        if os.path.exists(file):
+            shutil.copy2(file, resources_path)
+            print(f"Copied {file}")
 
-    for file_name in cleanup_files:
-        if os.path.exists(file_name):
-            os.remove(file_name)
-            print(f"Cleaned up {file_name}")
+    # Copy ffmpeg and yt-dlp binaries
+    print("Copying external binaries...")
+    bin_path = os.path.join(resources_path, "bin")
+    os.makedirs(bin_path, exist_ok=True)
+
+    # Copy ffmpeg
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        ffmpeg_dest = os.path.join(bin_path, "ffmpeg")
+        shutil.copy2(ffmpeg_path, ffmpeg_dest)
+        os.chmod(ffmpeg_dest, 0o755)  # Make it executable
+        print(f"Copied ffmpeg to {ffmpeg_dest}")
+    else:
+        print("❌ ffmpeg not found in system PATH")
+        print("Please install ffmpeg: brew install ffmpeg")
+        return False
+
+    # Copy ffprobe if available
+    ffprobe_path = shutil.which("ffprobe")
+    if ffprobe_path:
+        ffprobe_dest = os.path.join(bin_path, "ffprobe")
+        shutil.copy2(ffprobe_path, ffprobe_dest)
+        os.chmod(ffprobe_dest, 0o755)
+        print(f"Copied ffprobe to {ffprobe_dest}")
+
+    # Copy yt-dlp
+    ytdlp_path = shutil.which("yt-dlp")
+    if ytdlp_path:
+        ytdlp_dest = os.path.join(bin_path, "yt-dlp")
+        shutil.copy2(ytdlp_path, ytdlp_dest)
+        os.chmod(ytdlp_dest, 0o755)  # Make it executable
+        print(f"Copied yt-dlp to {ytdlp_dest}")
+    else:
+        print("❌ yt-dlp not found in system PATH")
+        print("Please install yt-dlp: pip install yt-dlp")
+        return False
+
+    # Create a virtual environment in the app bundle
+    print("Creating virtual environment in app bundle...")
+    venv_path = f"{resources_path}/venv"
+
+    try:
+        subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
+        print("Virtual environment created successfully")
+    except subprocess.CalledProcessError as e:
+        print(f"Error creating virtual environment: {e}")
+        return False
+
+    # Install dependencies in the virtual environment
+    print("Installing dependencies...")
+    pip_path = f"{venv_path}/bin/pip"
+    requirements_path = f"{resources_path}/requirements.txt"
+
+    try:
+        subprocess.run([pip_path, "install", "-r", requirements_path], check=True)
+        print("Dependencies installed successfully")
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing dependencies: {e}")
+        return False
+
+    print(f"\n✅ {app_name}.app bundle created successfully!")
+    print(f"Location: {os.path.abspath(app_bundle_path)}")
+    print("\nTo run the app:")
+    print(f"  open {app_bundle_path}")
+    print("\nTo distribute the app:")
+    print(f"  zip -r {app_name}.zip {app_bundle_path}")
+
+    return True
 
 def main():
     """Main build function"""
-    print("Transcribe YouTube - macOS App Builder")
+    print("Transcribe YouTube - Simple macOS App Builder")
     print("=" * 50)
 
     # Check if we're on macOS
@@ -183,32 +232,11 @@ def main():
         print(f"❌ Missing required files: {', '.join(missing_files)}")
         sys.exit(1)
 
-    # Install PyInstaller
-    if not install_pyinstaller():
-        sys.exit(1)
-
-    # Create icon placeholder
-    create_simple_icon()
-
-    # Create spec file
-    create_spec_file()
-
-    # Build the app
-    if build_app():
+    # Create the app bundle
+    if create_app_bundle():
         print("\n🎉 App bundle built successfully!")
-        print("Location: dist/TranscribeYouTube.app")
-        print("\nTo run the app:")
-        print("  open dist/TranscribeYouTube.app")
-        print("\nTo distribute the app:")
-        print("  zip -r TranscribeYouTube.zip dist/TranscribeYouTube.app")
-
-        # Ask if user wants to clean up
-        response = input("\nClean up build artifacts? (y/N): ").strip().lower()
-        if response in ['y', 'yes']:
-            cleanup()
-            print("✅ Build artifacts cleaned up")
     else:
-        print("\n❌ App build failed!")
+        print("\n❌ App bundle creation failed!")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -43,8 +43,8 @@ class TranscribeYTGUI:
         # Create progress section
         self.create_progress_section()
 
-        # Create summary section
-        self.create_summary_section()
+        # Create main content area with transcription list and summary
+        self.create_content_area()
 
         # Load configuration
         self.config = load_config()
@@ -147,11 +147,71 @@ class TranscribeYTGUI:
         self.status_label.set_halign(Gtk.Align.START)
         progress_box.pack_start(self.status_label, False, False, 0)
 
-    def create_summary_section(self):
+    def create_content_area(self):
+        """Create the main content area with transcription list and summary"""
+        # Create horizontal box for side-by-side layout
+        content_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        content_box.set_margin_bottom(10)
+        self.main_box.pack_start(content_box, True, True, 0)
+
+        # Create transcription list section
+        self.create_transcription_list_section(content_box)
+
+        # Create summary section
+        self.create_summary_section(content_box)
+
+    def create_transcription_list_section(self, parent_box):
+        """Create the transcription list section"""
+        # Transcription list frame
+        list_frame = Gtk.Frame(label="Existing Transcriptions")
+        list_frame.set_size_request(300, 400)
+        parent_box.pack_start(list_frame, False, False, 0)
+
+        # Create vertical box for list content
+        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        list_box.set_margin_left(10)
+        list_box.set_margin_right(10)
+        list_box.set_margin_top(10)
+        list_box.set_margin_bottom(10)
+        list_frame.add(list_box)
+
+        # Refresh button
+        refresh_button = Gtk.Button(label="Refresh List")
+        refresh_button.connect("clicked", self.on_refresh_transcriptions)
+        list_box.pack_start(refresh_button, False, False, 0)
+
+        # Create scrolled window for the list
+        scrolled_window = Gtk.ScrolledWindow()
+        scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        list_box.pack_start(scrolled_window, True, True, 0)
+
+        # Create list store for transcriptions
+        self.transcription_store = Gtk.ListStore(str, str, str)  # title, date, file_path
+
+        # Create tree view
+        self.transcription_tree = Gtk.TreeView(model=self.transcription_store)
+        self.transcription_tree.set_headers_visible(True)
+        self.transcription_tree.connect("row-activated", self.on_transcription_selected)
+
+        # Create columns
+        title_col = Gtk.TreeViewColumn("Title", Gtk.CellRendererText(), text=0)
+        title_col.set_expand(True)
+        self.transcription_tree.append_column(title_col)
+
+        date_col = Gtk.TreeViewColumn("Date", Gtk.CellRendererText(), text=1)
+        date_col.set_min_width(120)
+        self.transcription_tree.append_column(date_col)
+
+        scrolled_window.add(self.transcription_tree)
+
+        # Load initial transcriptions
+        self.load_transcriptions()
+
+    def create_summary_section(self, parent_box):
         """Create the summary section with TextView for rich text rendering"""
         # Summary frame
         summary_frame = Gtk.Frame(label="Summary")
-        self.main_box.pack_start(summary_frame, True, True, 0)
+        parent_box.pack_start(summary_frame, True, True, 0)
 
         # Create TextView for summary display
         self.summary_textview = Gtk.TextView()
@@ -214,6 +274,7 @@ class TranscribeYTGUI:
     def set_initial_content(self):
         """Set initial content for the summary view"""
         initial_text = """Transcribe YouTube
+
 ================
 
 Enter a YouTube URL above and click "Start Transcription" to begin.
@@ -339,6 +400,9 @@ Features:
             html_content = markdown.markdown(summary_content, extensions=['codehilite', 'fenced_code'])
 
             GLib.idle_add(self.display_summary, html_content, md_path)
+
+            # Refresh the transcription list to show the new transcription
+            GLib.idle_add(self.load_transcriptions)
 
             # Step 5: Clean up intermediate files
             GLib.idle_add(self.update_progress, 1.0, "Cleaning up...")
@@ -674,6 +738,70 @@ Features:
             # Ensure the application exits cleanly
             import sys
             sys.exit(0)
+
+    def load_transcriptions(self):
+        """Load existing transcriptions from the transcripts directory"""
+        transcripts_dir = Path.home() / ".transcribe-yt" / "transcripts"
+        if not transcripts_dir.exists():
+            return
+
+        # Clear existing entries
+        self.transcription_store.clear()
+
+        # Find all markdown files
+        md_files = list(transcripts_dir.glob("*.md"))
+        md_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)  # Sort by modification time, newest first
+
+        for md_file in md_files:
+            try:
+                # Extract title from filename (remove timestamp and .md extension)
+                filename = md_file.stem
+                # Remove timestamp pattern from end of filename
+                title = re.sub(r'_\d{8}_\d{6}$', '', filename)
+
+                # Get file modification time
+                import datetime
+                mtime = datetime.datetime.fromtimestamp(md_file.stat().st_mtime)
+                date_str = mtime.strftime("%Y-%m-%d %H:%M")
+
+                # Add to store
+                self.transcription_store.append([title, date_str, str(md_file)])
+            except Exception as e:
+                print(f"Error loading transcription {md_file}: {e}")
+
+    def on_refresh_transcriptions(self, button):
+        """Refresh the transcription list"""
+        self.load_transcriptions()
+
+    def on_transcription_selected(self, tree_view, path, column):
+        """Handle transcription selection"""
+        print(f"Transcription selected: path={path}")
+        model = tree_view.get_model()
+        tree_iter = model.get_iter(path)
+        if tree_iter:
+            file_path = model.get_value(tree_iter, 2)
+            print(f"Loading transcription: {file_path}")
+            self.load_transcription_summary(file_path)
+
+    def load_transcription_summary(self, file_path):
+        """Load and display a transcription summary"""
+        try:
+            print(f"Loading file: {file_path}")
+            with open(file_path, 'r', encoding='utf-8') as f:
+                markdown_content = f.read()
+
+            print(f"File content length: {len(markdown_content)} characters")
+            # Convert markdown to HTML
+            html_content = markdown.markdown(markdown_content)
+            print(f"HTML content length: {len(html_content)} characters")
+
+            # Display in the summary viewer
+            self.display_summary(html_content, file_path)
+            print("Summary displayed successfully")
+
+        except Exception as e:
+            print(f"Error loading transcription {file_path}: {e}")
+            self.status_label.set_text(f"Error loading transcription: {e}")
 
 
 def main():
