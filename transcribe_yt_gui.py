@@ -9,7 +9,9 @@ from gi.repository import Gtk, Gdk, GLib, Pango
 import threading
 import os
 import sys
+import signal
 import markdown
+import re
 from pathlib import Path
 
 # Import the transcription logic from the main module
@@ -146,7 +148,7 @@ class TranscribeYTGUI:
         progress_box.pack_start(self.status_label, False, False, 0)
 
     def create_summary_section(self):
-        """Create the summary section with TextView for text rendering"""
+        """Create the summary section with TextView for rich text rendering"""
         # Summary frame
         summary_frame = Gtk.Frame(label="Summary")
         self.main_box.pack_start(summary_frame, True, True, 0)
@@ -161,8 +163,11 @@ class TranscribeYTGUI:
         self.summary_textview.set_margin_bottom(10)
 
         # Set up font
-        font_desc = Pango.FontDescription("monospace 12")
+        font_desc = Pango.FontDescription("sans-serif 12")
         self.summary_textview.modify_font(font_desc)
+
+        # Set up text tags for rich formatting
+        self.setup_text_tags()
 
         # Create scrolled window for the textview
         self.summary_scrolled = Gtk.ScrolledWindow()
@@ -173,6 +178,38 @@ class TranscribeYTGUI:
 
         # Set initial content
         self.set_initial_content()
+
+    def setup_text_tags(self):
+        """Set up text tags for rich formatting"""
+        buffer = self.summary_textview.get_buffer()
+
+        # Bold tag
+        buffer.create_tag("bold", weight=Pango.Weight.BOLD)
+
+        # Italic tag
+        buffer.create_tag("italic", style=Pango.Style.ITALIC)
+
+        # Code tag
+        buffer.create_tag("code",
+                         family="monospace",
+                         background="#f4f4f4",
+                         foreground="#333333")
+
+        # Large tag for H1
+        buffer.create_tag("large",
+                        weight=Pango.Weight.BOLD,
+                        scale=1.3)
+
+        # Medium tag for H2
+        buffer.create_tag("medium",
+                         weight=Pango.Weight.BOLD,
+                         scale=1.1)
+
+        # Header tag
+        buffer.create_tag("header",
+                         weight=Pango.Weight.BOLD,
+                         scale=1.2,
+                         foreground="#2c3e50")
 
     def set_initial_content(self):
         """Set initial content for the summary view"""
@@ -187,11 +224,29 @@ Features:
 • Automatic subtitle detection and download
 • Audio transcription using NVIDIA Parakeet
 • AI-powered summarization with DeepSeek or Ollama
-• Rich markdown formatting support
+• Rich text formatting support
 """
         buffer = self.summary_textview.get_buffer()
         buffer.set_text(initial_text)
 
+        # Apply formatting to the initial content
+        self.apply_initial_formatting()
+
+    def apply_initial_formatting(self):
+        """Apply formatting to the initial content"""
+        buffer = self.summary_textview.get_buffer()
+        start_iter = buffer.get_start_iter()
+        end_iter = buffer.get_end_iter()
+
+        # Format the title
+        title_start = buffer.get_iter_at_offset(0)
+        title_end = buffer.get_iter_at_offset(17)  # "Transcribe YouTube"
+        buffer.apply_tag_by_name("large", title_start, title_end)
+
+        # Format the "Features:" header
+        features_start = buffer.get_iter_at_offset(buffer.get_text(start_iter, end_iter, False).find("Features:"))
+        features_end = buffer.get_iter_at_offset(features_start.get_offset() + 9)
+        buffer.apply_tag_by_name("header", features_start, features_end)
 
     def update_config_ui(self):
         """Update UI elements based on loaded configuration"""
@@ -313,14 +368,228 @@ Features:
         self.status_label.set_text(text)
         return False
 
+
     def display_summary(self, html_content, file_path):
-        """Display the summary in the TextView"""
-        # Convert HTML back to markdown for display in TextView
-        # For now, just display the HTML content as plain text
-        buffer = self.summary_textview.get_buffer()
-        buffer.set_text(html_content)
+        """Display the summary in the TextView with HTML rendering"""
+        # Render HTML content directly with rich formatting
+        self.render_html_content(html_content)
+
         self.status_label.set_text(f"Summary loaded from: {file_path}")
         return False
+
+    def render_html_content(self, html_content):
+        """Render HTML content directly in the TextView with proper formatting"""
+        buffer = self.summary_textview.get_buffer()
+        buffer.set_text("")  # Clear existing content
+
+        # Use BeautifulSoup for proper HTML parsing
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            self.render_soup_element(buffer, soup)
+        except ImportError:
+            # Fallback to simple text extraction if BeautifulSoup is not available
+            import re
+            # Remove HTML tags and get plain text
+            text = re.sub(r'<[^>]+>', '', html_content)
+            buffer.set_text(text)
+
+    def render_soup_element(self, buffer, element):
+        """Recursively render BeautifulSoup elements with formatting"""
+        if hasattr(element, 'name') and element.name is not None:
+            # This is a tag
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                self.render_header(buffer, element)
+            elif element.name in ['strong', 'b']:
+                self.render_bold(buffer, element)
+            elif element.name in ['em', 'i']:
+                self.render_italic(buffer, element)
+            elif element.name == 'code':
+                self.render_code(buffer, element)
+            elif element.name == 'p':
+                self.render_paragraph(buffer, element)
+            elif element.name in ['ul', 'ol']:
+                self.render_list(buffer, element)
+            elif element.name == 'li':
+                self.render_list_item(buffer, element)
+            elif element.name == 'br':
+                buffer.insert(buffer.get_end_iter(), '\n')
+            else:
+                # For other tags, just render their content
+                for child in element.children:
+                    self.render_soup_element(buffer, child)
+        else:
+            # This is text content (NavigableString)
+            text = str(element).strip()
+            if text:
+                buffer.insert(buffer.get_end_iter(), text)
+
+    def render_header(self, buffer, element):
+        """Render a header element with appropriate formatting"""
+        text = element.get_text().strip()
+        if text:
+            start_iter = buffer.get_end_iter()
+            buffer.insert(start_iter, text + '\n')
+
+            # Apply formatting
+            end_iter = buffer.get_end_iter()
+            start_iter = end_iter.copy()
+            start_iter.backward_chars(len(text) + 1)
+
+            if element.name == 'h1':
+                buffer.apply_tag_by_name("large", start_iter, end_iter)
+            elif element.name == 'h2':
+                buffer.apply_tag_by_name("medium", start_iter, end_iter)
+            else:
+                buffer.apply_tag_by_name("header", start_iter, end_iter)
+
+    def render_bold(self, buffer, element):
+        """Render bold text with formatting"""
+        text = element.get_text().strip()
+        if text:
+            start_iter = buffer.get_end_iter()
+            buffer.insert(start_iter, text)
+
+            # Apply bold formatting
+            end_iter = buffer.get_end_iter()
+            start_iter = end_iter.copy()
+            start_iter.backward_chars(len(text))
+            buffer.apply_tag_by_name("bold", start_iter, end_iter)
+
+    def render_italic(self, buffer, element):
+        """Render italic text with formatting"""
+        text = element.get_text().strip()
+        if text:
+            start_iter = buffer.get_end_iter()
+            buffer.insert(start_iter, text)
+
+            # Apply italic formatting
+            end_iter = buffer.get_end_iter()
+            start_iter = end_iter.copy()
+            start_iter.backward_chars(len(text))
+            buffer.apply_tag_by_name("italic", start_iter, end_iter)
+
+    def render_code(self, buffer, element):
+        """Render code with formatting"""
+        text = element.get_text().strip()
+        if text:
+            start_iter = buffer.get_end_iter()
+            buffer.insert(start_iter, text)
+
+            # Apply code formatting
+            end_iter = buffer.get_end_iter()
+            start_iter = end_iter.copy()
+            start_iter.backward_chars(len(text))
+            buffer.apply_tag_by_name("code", start_iter, end_iter)
+
+    def render_paragraph(self, buffer, element):
+        """Render a paragraph"""
+        text = element.get_text().strip()
+        if text:
+            buffer.insert(buffer.get_end_iter(), text + '\n\n')
+
+    def render_list(self, buffer, element):
+        """Render a list"""
+        for child in element.children:
+            if hasattr(child, 'name') and child.name == 'li':
+                self.render_list_item(buffer, child)
+
+    def render_list_item(self, buffer, element):
+        """Render a list item"""
+        text = element.get_text().strip()
+        if text:
+            buffer.insert(buffer.get_end_iter(), '• ' + text + '\n')
+
+    def html_to_formatted_text(self, html_content):
+        """Convert HTML to formatted text for display in TextView"""
+        # Remove HTML tags and convert to formatted text
+        text = html_content
+
+        # Convert common HTML elements to text formatting
+        text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'\n# \1\n', text, flags=re.DOTALL)
+        text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'\n## \1\n', text, flags=re.DOTALL)
+        text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'\n### \1\n', text, flags=re.DOTALL)
+        text = re.sub(r'<h4[^>]*>(.*?)</h4>', r'\n#### \1\n', text, flags=re.DOTALL)
+        text = re.sub(r'<h5[^>]*>(.*?)</h5>', r'\n##### \1\n', text, flags=re.DOTALL)
+        text = re.sub(r'<h6[^>]*>(.*?)</h6>', r'\n###### \1\n', text, flags=re.DOTALL)
+
+        # Convert paragraphs
+        text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.DOTALL)
+
+        # Convert lists
+        text = re.sub(r'<ul[^>]*>(.*?)</ul>', r'\1', text, flags=re.DOTALL)
+        text = re.sub(r'<ol[^>]*>(.*?)</ol>', r'\1', text, flags=re.DOTALL)
+        text = re.sub(r'<li[^>]*>(.*?)</li>', r'• \1\n', text, flags=re.DOTALL)
+
+        # Convert emphasis
+        text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.DOTALL)
+        text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.DOTALL)
+        text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.DOTALL)
+        text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.DOTALL)
+
+        # Convert code
+        text = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', text, flags=re.DOTALL)
+        text = re.sub(r'<pre[^>]*>(.*?)</pre>', r'\n```\n\1\n```\n', text, flags=re.DOTALL)
+
+        # Convert blockquotes
+        text = re.sub(r'<blockquote[^>]*>(.*?)</blockquote>', r'\n> \1\n', text, flags=re.DOTALL)
+
+        # Convert links
+        text = re.sub(r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.DOTALL)
+
+        # Convert line breaks
+        text = re.sub(r'<br[^>]*>', r'\n', text)
+
+        # Remove remaining HTML tags
+        text = re.sub(r'<[^>]+>', '', text)
+
+        # Clean up extra whitespace
+        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+        text = text.strip()
+
+        return text
+
+    def apply_rich_formatting(self, buffer):
+        """Apply rich formatting to the text buffer"""
+        start_iter = buffer.get_start_iter()
+        end_iter = buffer.get_end_iter()
+        text = buffer.get_text(start_iter, end_iter, False)
+
+        # Find and format headers
+        for match in re.finditer(r'^(#{1,6})\s+(.+)$', text, re.MULTILINE):
+            header_level = len(match.group(1))
+            header_text = match.group(2)
+
+            # Find the position of this header in the buffer
+            header_start = buffer.get_iter_at_offset(match.start())
+            header_end = buffer.get_iter_at_offset(match.end())
+
+            # Apply formatting based on header level
+            if header_level == 1:
+                buffer.apply_tag_by_name("large", header_start, header_end)
+            elif header_level == 2:
+                buffer.apply_tag_by_name("medium", header_start, header_end)
+            else:
+                buffer.apply_tag_by_name("header", header_start, header_end)
+
+        # Find and format bold text (**text**)
+        for match in re.finditer(r'\*\*(.*?)\*\*', text):
+            bold_start = buffer.get_iter_at_offset(match.start())
+            bold_end = buffer.get_iter_at_offset(match.end())
+            buffer.apply_tag_by_name("bold", bold_start, bold_end)
+
+        # Find and format italic text (*text*)
+        for match in re.finditer(r'\*(.*?)\*', text):
+            italic_start = buffer.get_iter_at_offset(match.start())
+            italic_end = buffer.get_iter_at_offset(match.end())
+            buffer.apply_tag_by_name("italic", italic_start, italic_end)
+
+        # Find and format code (`text`)
+        for match in re.finditer(r'`([^`]+)`', text):
+            code_start = buffer.get_iter_at_offset(match.start())
+            code_end = buffer.get_iter_at_offset(match.end())
+            buffer.apply_tag_by_name("code", code_start, code_end)
+
 
     def show_error(self, message):
         """Show error dialog"""
@@ -392,15 +661,32 @@ Features:
     def on_window_destroy(self, widget):
         """Handle window close"""
         Gtk.main_quit()
+        return True
 
     def run(self):
         """Run the GUI application"""
         self.window.show_all()
-        Gtk.main()
+        try:
+            Gtk.main()
+        except KeyboardInterrupt:
+            Gtk.main_quit()
+        finally:
+            # Ensure the application exits cleanly
+            import sys
+            sys.exit(0)
 
 
 def main():
     """Main entry point for GUI application"""
+    # Set up signal handlers for clean exit
+    def signal_handler(signum, frame):
+        print("\nReceived interrupt signal. Exiting...")
+        Gtk.main_quit()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     app = TranscribeYTGUI()
     app.run()
 
