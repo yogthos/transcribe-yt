@@ -9,6 +9,146 @@ import subprocess
 import shutil
 from pathlib import Path
 
+def copy_gtk_dependencies(resources_path):
+    """Copy GTK libraries and typelib files to the app bundle"""
+    homebrew_prefix = "/opt/homebrew"
+
+    # Create directories for GTK files
+    lib_path = os.path.join(resources_path, "lib")
+    share_path = os.path.join(resources_path, "share")
+    gir_path = os.path.join(share_path, "gir-1.0")
+    typelib_path = os.path.join(lib_path, "girepository-1.0")
+
+    os.makedirs(lib_path, exist_ok=True)
+    os.makedirs(share_path, exist_ok=True)
+    os.makedirs(gir_path, exist_ok=True)
+    os.makedirs(typelib_path, exist_ok=True)
+
+    try:
+        # GTK libraries to copy
+        gtk_libs = [
+            "libgtk-3.0.dylib",
+            "libgdk-3.0.dylib",
+            "libgobject-2.0.0.dylib",
+            "libglib-2.0.0.dylib",
+            "libgio-2.0.0.dylib",
+            "libgmodule-2.0.0.dylib",
+            "libgthread-2.0.0.dylib",
+            "libcairo.2.dylib",
+            "libpango-1.0.0.dylib",
+            "libpangocairo-1.0.0.dylib",
+            "libpangoft2-1.0.0.dylib",
+            "libgdk_pixbuf-2.0.0.dylib",
+            "libepoxy.0.dylib",
+            "libharfbuzz.0.dylib",
+            "libfreetype.6.dylib",
+            "libfontconfig.1.dylib",
+            "libintl.8.dylib",
+            "libatk-1.0.0.dylib"
+        ]
+
+        # Copy libraries
+        for lib in gtk_libs:
+            src = os.path.join(homebrew_prefix, "lib", lib)
+            if os.path.exists(src):
+                dst = os.path.join(lib_path, lib)
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"Copied {lib}")
+                else:
+                    print(f"Skipped {lib} (already exists)")
+            else:
+                print(f"Warning: {lib} not found")
+
+        # Copy typelib files for GTK
+        typelib_files = [
+            "Gtk-3.0.typelib",
+            "Gdk-3.0.typelib",
+            "Gio-2.0.typelib",
+            "GLib-2.0.typelib",
+            "GObject-2.0.typelib",
+            "cairo-1.0.typelib",
+            "Pango-1.0.typelib",
+            "GdkPixbuf-2.0.typelib",
+            "GModule-2.0.typelib",
+            "Atk-1.0.typelib",
+            "GdkPixbuf-2.0.typelib",
+            "Gio-2.0.typelib",
+            "GLib-2.0.typelib",
+            "GObject-2.0.typelib"
+        ]
+
+        for typelib in typelib_files:
+            src = os.path.join(homebrew_prefix, "lib", "girepository-1.0", typelib)
+            if os.path.exists(src):
+                dst = os.path.join(typelib_path, typelib)
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"Copied {typelib}")
+                else:
+                    print(f"Skipped {typelib} (already exists)")
+            else:
+                print(f"Warning: {typelib} not found")
+
+        # Copy GIR files
+        gir_files = [
+            "Gtk-3.0.gir",
+            "Gdk-3.0.gir",
+            "Gio-2.0.gir",
+            "GLib-2.0.gir",
+            "GObject-2.0.gir",
+            "cairo-1.0.gir",
+            "Pango-1.0.gir",
+            "GdkPixbuf-2.0.gir",
+            "Atk-1.0.gir"
+        ]
+
+        for gir_file in gir_files:
+            src = os.path.join(homebrew_prefix, "share", "gir-1.0", gir_file)
+            if os.path.exists(src):
+                dst = os.path.join(gir_path, gir_file)
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"Copied {gir_file}")
+                else:
+                    print(f"Skipped {gir_file} (already exists)")
+            else:
+                print(f"Warning: {gir_file} not found")
+
+        # Copy GTK schemas
+        schemas_path = os.path.join(share_path, "glib-2.0", "schemas")
+        os.makedirs(schemas_path, exist_ok=True)
+
+        schemas_src = os.path.join(homebrew_prefix, "share", "glib-2.0", "schemas")
+        if os.path.exists(schemas_src):
+            for schema_file in os.listdir(schemas_src):
+                if schema_file.endswith(".gschema.xml"):
+                    src = os.path.join(schemas_src, schema_file)
+                    dst = os.path.join(schemas_path, schema_file)
+                    if not os.path.exists(dst):
+                        shutil.copy2(src, dst)
+                        print(f"Copied schema {schema_file}")
+                    else:
+                        print(f"Skipped schema {schema_file} (already exists)")
+
+        # Compile schemas
+        if os.path.exists(schemas_path):
+            try:
+                subprocess.run([
+                    os.path.join(homebrew_prefix, "bin", "glib-compile-schemas"),
+                    schemas_path
+                ], check=True)
+                print("Compiled GTK schemas")
+            except subprocess.CalledProcessError:
+                print("Warning: Failed to compile GTK schemas")
+
+        print("GTK dependencies copied successfully")
+        return True
+
+    except Exception as e:
+        print(f"Error copying GTK dependencies: {e}")
+        return False
+
 def create_app_bundle():
     """Create the macOS .app bundle structure"""
 
@@ -91,6 +231,12 @@ cd "$RESOURCES_PATH"
 
 # Add the app bundle's bin directory to PATH for ffmpeg and yt-dlp
 export PATH="$RESOURCES_PATH/bin:$PATH"
+
+# Set up GTK environment variables
+export PKG_CONFIG_PATH="$RESOURCES_PATH/lib/pkgconfig:$RESOURCES_PATH/share/pkgconfig:$PKG_CONFIG_PATH"
+export DYLD_LIBRARY_PATH="$RESOURCES_PATH/lib:$DYLD_LIBRARY_PATH"
+export GI_TYPELIB_PATH="$RESOURCES_PATH/share/gir-1.0:$GI_TYPELIB_PATH"
+export XDG_DATA_DIRS="$RESOURCES_PATH/share:$XDG_DATA_DIRS"
 
 # Check if virtual environment exists
 if [ ! -f "$VENV_PYTHON" ]; then
@@ -198,11 +344,23 @@ except Exception as e:
     pip_path = f"{venv_path}/bin/pip"
     requirements_path = f"{resources_path}/requirements.txt"
 
+    # Set environment for pip to find GTK-related packages
+    env = os.environ.copy()
+    env['PKG_CONFIG_PATH'] = f"{resources_path}/lib/pkgconfig:{resources_path}/share/pkgconfig:/opt/homebrew/lib/pkgconfig:/opt/homebrew/share/pkgconfig:{env.get('PKG_CONFIG_PATH', '')}"
+    env['DYLD_LIBRARY_PATH'] = f"{resources_path}/lib:/opt/homebrew/lib:{env.get('DYLD_LIBRARY_PATH', '')}"
+    env['GI_TYPELIB_PATH'] = f"{resources_path}/share/gir-1.0:/opt/homebrew/share/gir-1.0:{env.get('GI_TYPELIB_PATH', '')}"
+
     try:
-        subprocess.run([pip_path, "install", "-r", requirements_path], check=True)
+        subprocess.run([pip_path, "install", "-r", requirements_path], check=True, env=env)
         print("Dependencies installed successfully")
     except subprocess.CalledProcessError as e:
         print(f"Error installing dependencies: {e}")
+        return False
+
+    # Copy GTK libraries and typelib files
+    print("Copying GTK libraries and typelib files...")
+    if not copy_gtk_dependencies(resources_path):
+        print("Failed to copy GTK dependencies")
         return False
 
     print(f"\n✅ {app_name}.app bundle created successfully!")
