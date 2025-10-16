@@ -2,6 +2,13 @@
 
 A Python tool that downloads YouTube videos, transcribes them using NVIDIA Parakeet (or subtitles when available), and generates summaries using DeepSeek API or local Ollama models.
 
+## Prerequisites
+
+MacOS
+```bash
+brew install gtk+3 pygobject3
+```
+
 ## Quick Start
 
 ```bash
