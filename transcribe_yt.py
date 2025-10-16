@@ -32,9 +32,11 @@ def load_config():
     config_path = get_config_path()
     default_config = {
         "deepseek_api_key": None,
-        "ollama_model": "qwen3:32b",
+        "ollama_model": "vicuna:7b",
         "chunk_duration": 300,
-        "overlap_duration": 30
+        "overlap_duration": 30,
+        "summary_chunk_size": None,  # None means no chunking, 0 means full text
+        "link_history": []
     }
 
     if not os.path.exists(config_path):
@@ -67,6 +69,91 @@ def save_config(config):
         print(f"Configuration saved to: {config_path}")
     except IOError as e:
         raise RuntimeError(f"Could not save config file: {e}")
+
+
+def get_video_title(url: str) -> str:
+    """
+    Extract video title from YouTube URL using yt-dlp
+
+    Args:
+        url: YouTube video URL
+
+    Returns:
+        Video title or "Unknown Title" if extraction fails
+    """
+    try:
+        cmd = [
+            "yt-dlp",
+            "--get-title",
+            "--no-warnings",
+            url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        else:
+            return "Unknown Title"
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return "Unknown Title"
+
+
+def save_link_to_history(url: str, title: str = None):
+    """
+    Save a link to the history in the config file
+
+    Args:
+        url: YouTube video URL
+        title: Video title (will be extracted if not provided)
+    """
+    if title is None:
+        title = get_video_title(url)
+
+    config = load_config()
+
+    # Create new history entry
+    history_entry = {
+        "id": str(int(datetime.now().timestamp())),
+        "url": url,
+        "title": title,
+        "timestamp": datetime.now().isoformat()
+    }
+
+    # Add to beginning of history (most recent first)
+    if "link_history" not in config:
+        config["link_history"] = []
+
+    config["link_history"].insert(0, history_entry)
+
+    # Limit history to last 50 entries
+    config["link_history"] = config["link_history"][:50]
+
+    save_config(config)
+    return history_entry
+
+
+def load_link_history():
+    """
+    Load link history from config
+
+    Returns:
+        List of history entries
+    """
+    config = load_config()
+    return config.get("link_history", [])
+
+
+def remove_link_from_history(link_id: str):
+    """
+    Remove a link from history by ID
+
+    Args:
+        link_id: ID of the link to remove
+    """
+    config = load_config()
+    if "link_history" in config:
+        config["link_history"] = [entry for entry in config["link_history"] if entry.get("id") != link_id]
+        save_config(config)
 
 
 def download_subtitles(url: str, output_dir: str = ".") -> str:
@@ -390,13 +477,53 @@ def transcribe_audio_chunked(wav_path: str, asr_model, chunk_duration: int, over
     return full_transcription
 
 
-def generate_summary_deepseek(transcription_path: str, api_key: str) -> str:
+def chunk_text(text: str, chunk_size: int) -> list:
     """
-    Generate summary using DeepSeek API
+    Split text into chunks of approximately chunk_size words, breaking at sentence boundaries
+
+    Args:
+        text: Text to chunk
+        chunk_size: Target number of words per chunk
+
+    Returns:
+        List of text chunks
+    """
+    import re
+
+    # Split text into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+
+    chunks = []
+    current_chunk = []
+    current_word_count = 0
+
+    for sentence in sentences:
+        sentence_words = len(sentence.split())
+
+        # If adding this sentence would exceed chunk size, start a new chunk
+        if current_word_count + sentence_words > chunk_size and current_chunk:
+            chunks.append(' '.join(current_chunk))
+            current_chunk = [sentence]
+            current_word_count = sentence_words
+        else:
+            current_chunk.append(sentence)
+            current_word_count += sentence_words
+
+    # Add the last chunk if it has content
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+
+    return chunks
+
+
+def generate_summary_deepseek(transcription_path: str, api_key: str, chunk_size: int = None) -> str:
+    """
+    Generate summary using DeepSeek API with optional chunking
 
     Args:
         transcription_path: Path to the transcription text file
         api_key: DeepSeek API key
+        chunk_size: Number of words per chunk (None for no chunking)
 
     Returns:
         Path to the summary markdown file
@@ -415,60 +542,111 @@ def generate_summary_deepseek(transcription_path: str, api_key: str) -> str:
     if estimated_tokens > 100000:
         print(f"Warning: Transcript is very long (~{estimated_tokens:,} tokens). DeepSeek may truncate very long content.")
 
-    prompt = f"""Please provide a comprehensive summary of the following transcribed content.
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    print("Generating summary using DeepSeek API...")
+    print(f"Transcript length: {len(transcription):,} characters (~{estimated_tokens:,} tokens)")
+
+    # If chunk_size is specified, process in chunks
+    if chunk_size and chunk_size > 0:
+        print(f"Processing transcript in chunks of {chunk_size} words...")
+        chunks = chunk_text(transcription, chunk_size)
+        print(f"Split into {len(chunks)} chunks")
+
+        chunk_summaries = []
+
+        for i, chunk in enumerate(chunks, 1):
+            print(f"Processing chunk {i}/{len(chunks)} ({len(chunk.split())} words)...")
+
+            prompt = f"""Please provide a comprehensive summary of the following transcribed content.
+Focus on the main points, key insights, and important details. Make sure not to omit details:
+
+{chunk}
+
+Summary:"""
+
+            data = {
+                "model": "deepseek-chat",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "stream": False
+            }
+
+            try:
+                response = requests.post(
+                    "https://api.deepseek.com/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=60
+                )
+                response.raise_for_status()
+
+                chunk_summary = response.json()["choices"][0]["message"]["content"]
+                chunk_summaries.append(f"## Chunk {i} Summary\n\n{chunk_summary}\n")
+
+            except requests.RequestException as e:
+                print(f"Error processing chunk {i}: {e}")
+                chunk_summaries.append(f"## Chunk {i} Summary\n\n*Error processing this chunk*\n")
+
+        # Combine all chunk summaries
+        final_summary = "# Detailed Summary\n\n" + "\n".join(chunk_summaries)
+
+    else:
+        # Process entire transcript at once
+        prompt = f"""Please provide a comprehensive summary of the following transcribed content.
 Focus on the main points, key insights, and important details. Make sure not to omit details:
 
 {transcription}
 
 Summary:"""
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "stream": False
+        }
 
-    data = {
-        "model": "deepseek-chat",
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "stream": False
-    }
+        try:
+            response = requests.post(
+                "https://api.deepseek.com/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=60
+            )
+            response.raise_for_status()
 
-    print("Generating summary using DeepSeek API...")
-    print(f"Transcript length: {len(transcription):,} characters (~{estimated_tokens:,} tokens)")
+            final_summary = response.json()["choices"][0]["message"]["content"]
 
-    try:
-        response = requests.post(
-            "https://api.deepseek.com/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=60
-        )
-        response.raise_for_status()
+        except requests.RequestException as e:
+            raise RuntimeError(f"Failed to generate summary with DeepSeek: {e}")
 
-        summary = response.json()["choices"][0]["message"]["content"]
+    with open(md_path, 'w', encoding='utf-8') as f:
+        f.write(final_summary)
 
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(summary)
-
-        print(f"Summary saved to: {md_path}")
-        return str(md_path)
-
-    except requests.RequestException as e:
-        raise RuntimeError(f"Failed to generate summary with DeepSeek: {e}")
+    print(f"Summary saved to: {md_path}")
+    return str(md_path)
 
 
-def generate_summary_ollama(transcription_path: str, model: str = "qwen3:32b") -> str:
+def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", chunk_size: int = None) -> str:
     """
-    Generate summary using local Ollama model
+    Generate summary using local Ollama model with optional chunking
 
     Args:
         transcription_path: Path to the transcription text file
         model: Ollama model name
+        chunk_size: Number of words per chunk (None for no chunking)
 
     Returns:
         Path to the summary markdown file
@@ -487,49 +665,102 @@ def generate_summary_ollama(transcription_path: str, model: str = "qwen3:32b") -
     if estimated_tokens > 100000:
         print(f"Warning: Transcript is very long (~{estimated_tokens:,} tokens). Consider using a model with larger context window.")
 
-    prompt = f"""Please provide a comprehensive summary of the following transcribed content.
+    print(f"Generating summary using Ollama model: {model}...")
+    print(f"Transcript length: {len(transcription):,} characters (~{estimated_tokens:,} tokens)")
+
+    # If chunk_size is specified, process in chunks
+    if chunk_size and chunk_size > 0:
+        print(f"Processing transcript in chunks of {chunk_size} words...")
+        chunks = chunk_text(transcription, chunk_size)
+        print(f"Split into {len(chunks)} chunks")
+
+        chunk_summaries = []
+
+        for i, chunk in enumerate(chunks, 1):
+            print(f"Processing chunk {i}/{len(chunks)} ({len(chunk.split())} words)...")
+
+            prompt = f"""Please provide a comprehensive summary of the following transcribed content.
+Focus on the main points, key insights, and important details:
+
+{chunk}
+
+Summary:"""
+
+            data = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "stream": False,
+                "options": {
+                    "num_ctx": 131072  # Request larger context window (128k tokens)
+                }
+            }
+
+            try:
+                response = requests.post(
+                    "http://localhost:11434/api/chat",
+                    json=data,
+                    timeout=300  # Increase timeout for longer transcripts
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                chunk_summary = result.get("message", {}).get("content", "")
+                chunk_summaries.append(f"## Chunk {i} Summary\n\n{chunk_summary}\n")
+
+            except requests.RequestException as e:
+                print(f"Error processing chunk {i}: {e}")
+                chunk_summaries.append(f"## Chunk {i} Summary\n\n*Error processing this chunk*\n")
+
+        # Combine all chunk summaries
+        final_summary = "# Detailed Summary\n\n" + "\n".join(chunk_summaries)
+
+    else:
+        # Process entire transcript at once
+        prompt = f"""Please provide a comprehensive summary of the following transcribed content.
 Focus on the main points, key insights, and important details:
 
 {transcription}
 
 Summary:"""
 
-    data = {
-        "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
+        data = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "stream": False,
+            "options": {
+                "num_ctx": 131072  # Request larger context window (128k tokens)
             }
-        ],
-        "stream": False,
-        "options": {
-            "num_ctx": 131072  # Request larger context window (128k tokens)
         }
-    }
 
-    print(f"Generating summary using Ollama model: {model}...")
-    print(f"Transcript length: {len(transcription):,} characters (~{estimated_tokens:,} tokens)")
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/chat",
+                json=data,
+                timeout=300  # Increase timeout for longer transcripts
+            )
+            response.raise_for_status()
 
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/chat",
-            json=data,
-            timeout=300  # Increase timeout for longer transcripts
-        )
-        response.raise_for_status()
+            result = response.json()
+            final_summary = result.get("message", {}).get("content", "")
 
-        result = response.json()
-        summary = result.get("message", {}).get("content", "")
+        except requests.RequestException as e:
+            raise RuntimeError(f"Failed to generate summary with Ollama: {e}")
 
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(summary)
+    with open(md_path, 'w', encoding='utf-8') as f:
+        f.write(final_summary)
 
-        print(f"Summary saved to: {md_path}")
-        return str(md_path)
-
-    except requests.RequestException as e:
-        raise RuntimeError(f"Failed to generate summary with Ollama: {e}")
+    print(f"Summary saved to: {md_path}")
+    return str(md_path)
 
 
 def check_dependencies():
@@ -551,8 +782,8 @@ def main():
     parser.add_argument("--output-dir", "-o", default="~/.transcribe-yt/transcripts", help="Output directory (default: ~/.transcribe-yt/transcripts)")
     parser.add_argument("--model", choices=["deepseek", "ollama"], default="deepseek",
                        help="Summary model to use (default: deepseek)")
-    parser.add_argument("--ollama-model", default="qwen3:32b",
-                       help="Ollama model name (default: qwen3:32b)")
+    parser.add_argument("--ollama-model", default="vicuna:7b",
+                       help="Ollama model name (default: vicuna:7b)")
     parser.add_argument("--force-transcribe", action="store_true",
                        help="Force audio transcription even if subtitles are available")
 
@@ -562,11 +793,14 @@ def main():
                        help="Audio chunk duration in seconds for large files (default: 300)")
     parser.add_argument("--overlap-duration", type=int, default=config.get("overlap_duration", 30),
                        help="Overlap between audio chunks in seconds (default: 30)")
+    parser.add_argument("--summary-chunk-size", type=int, default=config.get("summary_chunk_size"),
+                       help="Summary chunk size in words (default: None for no chunking)")
 
     # Configuration management options
     parser.add_argument("--set-api-key", help="Set DeepSeek API key in configuration")
     parser.add_argument("--set-chunk-duration", type=int, help="Set default chunk duration in configuration")
     parser.add_argument("--set-overlap-duration", type=int, help="Set default overlap duration in configuration")
+    parser.add_argument("--set-summary-chunk-size", type=int, help="Set default summary chunk size in configuration")
     parser.add_argument("--show-config", action="store_true", help="Show current configuration")
     parser.add_argument("--config-dir", help="Show configuration directory path")
 
@@ -592,6 +826,13 @@ def main():
         config["overlap_duration"] = args.set_overlap_duration
         save_config(config)
         print(f"Overlap duration set to {args.set_overlap_duration} seconds")
+        return
+
+    if args.set_summary_chunk_size:
+        config = load_config()
+        config["summary_chunk_size"] = args.set_summary_chunk_size
+        save_config(config)
+        print(f"Summary chunk size set to {args.set_summary_chunk_size} words")
         return
 
     if args.show_config:
@@ -623,6 +864,10 @@ def main():
         # Check dependencies
         check_dependencies()
 
+        # Save link to history
+        print("Saving link to history...")
+        save_link_to_history(args.url)
+
         txt_path = None
         mp3_path = None
         srt_path = None
@@ -647,11 +892,13 @@ def main():
             api_key = config.get("deepseek_api_key")
             if not api_key:
                 raise ValueError("DeepSeek API key not set. Use --set-api-key to configure it.")
-            md_path = generate_summary_deepseek(txt_path, api_key)
+            chunk_size = args.summary_chunk_size
+            md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
         else:
             config = load_config()
             ollama_model = config.get("ollama_model", args.ollama_model)
-            md_path = generate_summary_ollama(txt_path, ollama_model)
+            chunk_size = args.summary_chunk_size
+            md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size)
 
         # Step 4: Clean up intermediate files
         print("\nCleaning up intermediate files...")
