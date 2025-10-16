@@ -18,7 +18,8 @@ from pathlib import Path
 from transcribe_yt import (
     download_subtitles, download_audio, convert_srt_to_text,
     transcribe_audio, generate_summary_deepseek, generate_summary_ollama,
-    load_config, save_config, check_dependencies
+    load_config, save_config, check_dependencies,
+    save_link_to_history, load_link_history, remove_link_from_history
 )
 
 
@@ -102,6 +103,37 @@ class TranscribeYTGUI:
 
         input_box.pack_start(options_box, False, False, 0)
 
+        # Chunk size control
+        chunk_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        chunk_label = Gtk.Label("Summary Chunk Size:")
+        chunk_label.set_size_request(150, -1)
+        chunk_label.set_halign(Gtk.Align.START)
+
+        # Create scale (slider) for chunk size
+        self.chunk_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 10000, 500)
+        self.chunk_scale.set_size_request(200, -1)
+        self.chunk_scale.set_value(0)  # Default to no chunking
+        self.chunk_scale.set_draw_value(True)
+        self.chunk_scale.set_value_pos(Gtk.PositionType.RIGHT)
+        self.chunk_scale.set_digits(0)
+
+        # Add marks for common values
+        self.chunk_scale.add_mark(0, Gtk.PositionType.TOP, "Full Text")
+        self.chunk_scale.add_mark(1000, Gtk.PositionType.TOP, "1K")
+        self.chunk_scale.add_mark(5000, Gtk.PositionType.TOP, "5K")
+        self.chunk_scale.add_mark(10000, Gtk.PositionType.TOP, "10K")
+
+        # Value label
+        self.chunk_value_label = Gtk.Label("Full Text")
+        self.chunk_value_label.set_size_request(80, -1)
+        self.chunk_scale.connect("value-changed", self.on_chunk_size_changed)
+
+        chunk_box.pack_start(chunk_label, False, False, 0)
+        chunk_box.pack_start(self.chunk_scale, True, True, 0)
+        chunk_box.pack_start(self.chunk_value_label, False, False, 0)
+
+        input_box.pack_start(chunk_box, False, False, 0)
+
         # Button box
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 
@@ -148,23 +180,88 @@ class TranscribeYTGUI:
         progress_box.pack_start(self.status_label, False, False, 0)
 
     def create_content_area(self):
-        """Create the main content area with transcription list and summary"""
+        """Create the main content area with link history, transcription list and summary"""
         # Create horizontal box for side-by-side layout
         content_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         content_box.set_margin_bottom(10)
         self.main_box.pack_start(content_box, True, True, 0)
 
+        # Create left panel with link history and transcriptions
+        left_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        left_panel.set_size_request(300, 400)
+        content_box.pack_start(left_panel, False, False, 0)
+
+        # Create link history section
+        self.create_link_history_section(left_panel)
+
         # Create transcription list section
-        self.create_transcription_list_section(content_box)
+        self.create_transcription_list_section(left_panel)
 
         # Create summary section
         self.create_summary_section(content_box)
+
+    def create_link_history_section(self, parent_box):
+        """Create the link history section"""
+        # Link history frame
+        history_frame = Gtk.Frame(label="Link History")
+        history_frame.set_size_request(300, 200)
+        parent_box.pack_start(history_frame, False, False, 0)
+
+        # Create vertical box for history content
+        history_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        history_box.set_margin_left(10)
+        history_box.set_margin_right(10)
+        history_box.set_margin_top(10)
+        history_box.set_margin_bottom(10)
+        history_frame.add(history_box)
+
+        # Clear history button
+        clear_history_button = Gtk.Button(label="Clear History")
+        clear_history_button.connect("clicked", self.on_clear_history_clicked)
+        history_box.pack_start(clear_history_button, False, False, 0)
+
+        # Create scrolled window for the history list
+        scrolled_window = Gtk.ScrolledWindow()
+        scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        history_box.pack_start(scrolled_window, True, True, 0)
+
+        # Create list store for link history
+        self.history_store = Gtk.ListStore(str, str, str, str)  # title, url, date, id
+
+        # Create tree view
+        self.history_tree = Gtk.TreeView(model=self.history_store)
+        self.history_tree.set_headers_visible(True)
+        self.history_tree.connect("row-activated", self.on_history_selected)
+
+        # Create columns
+        title_col = Gtk.TreeViewColumn("Title", Gtk.CellRendererText(), text=0)
+        title_col.set_expand(True)
+        self.history_tree.append_column(title_col)
+
+        date_col = Gtk.TreeViewColumn("Date", Gtk.CellRendererText(), text=2)
+        date_col.set_min_width(100)
+        self.history_tree.append_column(date_col)
+
+        # Add remove button column
+        remove_renderer = Gtk.CellRendererText()
+        remove_renderer.set_property("text", "×")
+        remove_renderer.set_property("foreground", "red")
+        remove_renderer.set_property("weight", Pango.Weight.BOLD)
+        remove_col = Gtk.TreeViewColumn("Remove", remove_renderer, text=3)
+        remove_col.set_min_width(50)
+        remove_col.set_alignment(0.5)
+        self.history_tree.append_column(remove_col)
+
+        scrolled_window.add(self.history_tree)
+
+        # Load initial history
+        self.load_link_history()
 
     def create_transcription_list_section(self, parent_box):
         """Create the transcription list section"""
         # Transcription list frame
         list_frame = Gtk.Frame(label="Existing Transcriptions")
-        list_frame.set_size_request(300, 400)
+        list_frame.set_size_request(300, 200)
         parent_box.pack_start(list_frame, False, False, 0)
 
         # Create vertical box for list content
@@ -316,6 +413,20 @@ Features:
             # For now, keep default selection (DeepSeek)
             pass
 
+        # Update chunk size from config
+        chunk_size = self.config.get("summary_chunk_size")
+        if chunk_size is not None:
+            self.chunk_scale.set_value(chunk_size)
+            self.on_chunk_size_changed(self.chunk_scale)
+
+    def on_chunk_size_changed(self, scale):
+        """Handle chunk size slider changes"""
+        value = int(scale.get_value())
+        if value == 0:
+            self.chunk_value_label.set_text("Full Text")
+        else:
+            self.chunk_value_label.set_text(f"{value:,} words")
+
     def on_transcribe_clicked(self, widget):
         """Handle transcribe button click"""
         url = self.url_entry.get_text().strip()
@@ -346,6 +457,10 @@ Features:
 
             # Check dependencies
             check_dependencies()
+
+            # Save link to history
+            GLib.idle_add(self.update_progress, 0.15, "Saving to history...")
+            save_link_to_history(url)
 
             GLib.idle_add(self.update_progress, 0.2, "Downloading content...")
 
@@ -381,15 +496,19 @@ Features:
             GLib.idle_add(self.update_progress, 0.7, "Generating summary...")
 
             model_index = self.model_combo.get_active()
+            chunk_size = int(self.chunk_scale.get_value())
+            if chunk_size == 0:
+                chunk_size = None  # No chunking for full text
+
             if model_index == 0:  # DeepSeek
                 api_key = self.config.get("deepseek_api_key")
                 if not api_key:
                     GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
                     return
-                md_path = generate_summary_deepseek(txt_path, api_key)
+                md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
             else:  # Ollama
                 ollama_model = self.config.get("ollama_model", "qwen3:32b")
-                md_path = generate_summary_ollama(txt_path, ollama_model)
+                md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size)
 
             # Step 4: Load and display summary
             GLib.idle_add(self.update_progress, 0.9, "Loading summary...")
@@ -404,6 +523,9 @@ Features:
 
             # Refresh the transcription list to show the new transcription
             GLib.idle_add(self.load_transcriptions)
+
+            # Refresh the link history
+            GLib.idle_add(self.load_link_history)
 
             # Step 5: Clean up intermediate files
             GLib.idle_add(self.update_progress, 1.0, "Cleaning up...")
@@ -703,6 +825,18 @@ Features:
         ollama_entry.set_text(self.config.get("ollama_model", "qwen3:32b"))
         content_area.pack_start(ollama_entry, True, True, 0)
 
+        # Summary chunk size entry
+        chunk_label = Gtk.Label("Summary Chunk Size (words):")
+        chunk_label.set_halign(Gtk.Align.START)
+        content_area.pack_start(chunk_label, False, False, 0)
+
+        chunk_entry = Gtk.Entry()
+        chunk_entry.set_placeholder_text("Leave empty for no chunking")
+        chunk_size = self.config.get("summary_chunk_size")
+        if chunk_size is not None:
+            chunk_entry.set_text(str(chunk_size))
+        content_area.pack_start(chunk_entry, True, True, 0)
+
         dialog.show_all()
 
         response = dialog.run()
@@ -710,6 +844,19 @@ Features:
             # Save configuration
             self.config["deepseek_api_key"] = api_key_entry.get_text()
             self.config["ollama_model"] = ollama_entry.get_text()
+
+            # Handle chunk size
+            chunk_text = chunk_entry.get_text().strip()
+            if chunk_text:
+                try:
+                    self.config["summary_chunk_size"] = int(chunk_text)
+                except ValueError:
+                    self.show_error("Invalid chunk size. Please enter a number or leave empty.")
+                    dialog.destroy()
+                    return
+            else:
+                self.config["summary_chunk_size"] = None
+
             save_config(self.config)
             self.update_config_ui()
 
@@ -803,6 +950,95 @@ Features:
         except Exception as e:
             print(f"Error loading transcription {file_path}: {e}")
             self.status_label.set_text(f"Error loading transcription: {e}")
+
+    def load_link_history(self):
+        """Load link history from config and populate the tree view"""
+        try:
+            history_entries = load_link_history()
+
+            # Clear existing entries
+            self.history_store.clear()
+
+            for entry in history_entries:
+                # Format timestamp for display
+                try:
+                    from datetime import datetime
+                    timestamp = datetime.fromisoformat(entry.get("timestamp", ""))
+                    date_str = timestamp.strftime("%Y-%m-%d %H:%M")
+                except:
+                    date_str = "Unknown"
+
+                # Add to store: title, url, date, id
+                self.history_store.append([
+                    entry.get("title", "Unknown Title"),
+                    entry.get("url", ""),
+                    date_str,
+                    entry.get("id", "")
+                ])
+        except Exception as e:
+            print(f"Error loading link history: {e}")
+
+    def on_history_selected(self, tree_view, path, column):
+        """Handle link history selection"""
+        model = tree_view.get_model()
+        tree_iter = model.get_iter(path)
+        if tree_iter:
+            url = model.get_value(tree_iter, 1)  # URL is in column 1
+            link_id = model.get_value(tree_iter, 3)  # ID is in column 3
+
+            # Check if user clicked on the remove column
+            if column.get_title() == "Remove":
+                self.remove_link_from_history(link_id)
+            else:
+                # Load URL into input field
+                self.url_entry.set_text(url)
+                self.status_label.set_text(f"Loaded URL: {url}")
+
+    def remove_link_from_history(self, link_id):
+        """Remove a link from history with confirmation"""
+        dialog = Gtk.MessageDialog(
+            parent=self.window,
+            flags=Gtk.DialogFlags.MODAL,
+            type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            message_format="Are you sure you want to remove this link from history?"
+        )
+        dialog.set_title("Remove Link")
+
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.YES:
+            try:
+                remove_link_from_history(link_id)
+                self.load_link_history()  # Refresh the list
+                self.status_label.set_text("Link removed from history")
+            except Exception as e:
+                self.show_error(f"Error removing link: {e}")
+
+    def on_clear_history_clicked(self, button):
+        """Handle clear history button click"""
+        dialog = Gtk.MessageDialog(
+            parent=self.window,
+            flags=Gtk.DialogFlags.MODAL,
+            type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.YES_NO,
+            message_format="Are you sure you want to clear all link history?"
+        )
+        dialog.set_title("Clear History")
+
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.YES:
+            try:
+                config = load_config()
+                config["link_history"] = []
+                save_config(config)
+                self.load_link_history()  # Refresh the list
+                self.status_label.set_text("Link history cleared")
+            except Exception as e:
+                self.show_error(f"Error clearing history: {e}")
 
 
 def main():
