@@ -32,7 +32,7 @@ def load_config():
     config_path = get_config_path()
     default_config = {
         "deepseek_api_key": None,
-        "ollama_model": "qwen3:32b",
+        "ollama_model": "vicuna:7b",
         "chunk_duration": 300,
         "overlap_duration": 30,
         "summary_chunk_size": None,  # None means no chunking, 0 means full text
@@ -639,7 +639,7 @@ Summary:"""
     return str(md_path)
 
 
-def generate_summary_ollama(transcription_path: str, model: str = "qwen3:32b", chunk_size: int = None) -> str:
+def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", chunk_size: int = None) -> str:
     """
     Generate summary using local Ollama model with optional chunking
 
@@ -782,8 +782,8 @@ def main():
     parser.add_argument("--output-dir", "-o", default="~/.transcribe-yt/transcripts", help="Output directory (default: ~/.transcribe-yt/transcripts)")
     parser.add_argument("--model", choices=["deepseek", "ollama"], default="deepseek",
                        help="Summary model to use (default: deepseek)")
-    parser.add_argument("--ollama-model", default="qwen3:32b",
-                       help="Ollama model name (default: qwen3:32b)")
+    parser.add_argument("--ollama-model", default="vicuna:7b",
+                       help="Ollama model name (default: vicuna:7b)")
     parser.add_argument("--force-transcribe", action="store_true",
                        help="Force audio transcription even if subtitles are available")
 

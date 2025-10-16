@@ -56,7 +56,7 @@ chmod +x setup.sh
 
    # For Ollama (local models)
    curl -fsSL https://ollama.ai/install.sh | sh
-   ollama pull qwen3:32b
+   ollama pull vicuna:7b
    ```
 
 ## Usage
@@ -97,7 +97,7 @@ python3 build_app.py
 | `url` | YouTube video URL (required) | - |
 | `--output-dir, -o` | Output directory | `~/.transcribe-yt/transcripts` |
 | `--model` | Summary model: `deepseek` or `ollama` | `deepseek` |
-| `--ollama-model` | Ollama model name | `qwen3:32b` |
+| `--ollama-model` | Ollama model name | `vicuna:7b` |
 | `--force-transcribe` | Force audio transcription | `false` |
 | `--chunk-duration` | Audio chunk size (seconds) | `300` |
 | `--overlap-duration` | Chunk overlap (seconds) | `30` |
@@ -152,7 +152,7 @@ python3 transcribe_yt.py --chunk-duration 600 "https://www.youtube.com/watch?v=l
 - **Ollama connection**: Run `ollama serve`
 
 ### Performance Tips
-- Use smaller models (`qwen3:1.7b`) for faster results
+- Use smaller models (`vicuna:7b`) for faster results
 - Use larger models (`qwen3:32b`) for better quality
 - Adjust chunk size for your system's memory
 

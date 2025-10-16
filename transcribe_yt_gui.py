@@ -507,7 +507,7 @@ Features:
                     return
                 md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
             else:  # Ollama
-                ollama_model = self.config.get("ollama_model", "qwen3:32b")
+                ollama_model = self.config.get("ollama_model", "vicuna:7b")
                 md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size)
 
             # Step 4: Load and display summary
@@ -821,8 +821,8 @@ Features:
         content_area.pack_start(ollama_label, False, False, 0)
 
         ollama_entry = Gtk.Entry()
-        ollama_entry.set_placeholder_text("e.g., qwen3:32b")
-        ollama_entry.set_text(self.config.get("ollama_model", "qwen3:32b"))
+        ollama_entry.set_placeholder_text("e.g., vicuna:7b")
+        ollama_entry.set_text(self.config.get("ollama_model", "vicuna:7b"))
         content_area.pack_start(ollama_entry, True, True, 0)
 
         # Summary chunk size entry
