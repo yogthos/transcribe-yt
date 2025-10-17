@@ -3,9 +3,6 @@
 # Core dependencies
 requests>=2.25.0
 
-# Hugging Face Transformers for summarization
-transformers>=4.30.0
-torch>=2.0.0
 
 # Audio processing
 nemo_toolkit[asr]>=1.21.0

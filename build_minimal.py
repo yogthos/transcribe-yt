@@ -169,54 +169,9 @@ def main():
     print("\nCopying external binaries...")
     copy_external_binaries()
 
-    # Download Hugging Face model after build
     print("\nSkipping spaCy English model download during build...")
     print("The model will be downloaded automatically on first use of extractive summarization.")
 
-    print("\nDownloading Hugging Face model...")
-    try:
-        # Run a Python script to download the model
-        download_script = """
-import sys
-import os
-sys.path.insert(0, '.')
-
-# Set custom cache directory for models
-cache_dir = os.path.expanduser("~/.transcribe-yt/models")
-os.makedirs(cache_dir, exist_ok=True)
-
-# Set environment variables for transformers cache
-os.environ['TRANSFORMERS_CACHE'] = cache_dir
-os.environ['HF_HOME'] = cache_dir
-
-print(f"Using model cache directory: {{cache_dir}}")
-
-try:
-    from transformers import pipeline
-    print("Downloading facebook/bart-large-cnn model...")
-    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", cache_dir=cache_dir)
-    print("Hugging Face model downloaded successfully")
-except Exception as e:
-    print(f"Warning: Failed to download Hugging Face model: {{e}}")
-    print("The model will be downloaded on first use instead")
-"""
-
-        # Write the download script to a temporary file
-        download_script_path = os.path.join(resources_path, "download_model.py")
-        with open(download_script_path, "w") as f:
-            f.write(download_script)
-
-        # Run the download script
-        python_cmd = [sys.executable, download_script_path]
-        subprocess.run(python_cmd, check=True, cwd=resources_path)
-
-        # Clean up the temporary script
-        os.remove(download_script_path)
-
-        print("Hugging Face model downloaded successfully")
-    except Exception as e:
-        print(f"Warning: Failed to download Hugging Face model: {e}")
-        print("The model will be downloaded on first use instead")
 
     # Sign the app bundle
     print("\nSigning app bundle...")

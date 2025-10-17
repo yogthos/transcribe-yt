@@ -17,7 +17,7 @@ from pathlib import Path
 # Import the transcription logic from the main module
 from transcribe_yt import (
     download_subtitles, download_audio, convert_srt_to_text,
-    transcribe_audio, generate_summary_deepseek, generate_summary_ollama, generate_summary_huggingface, generate_summary_extractive,
+    transcribe_audio, generate_summary_deepseek, generate_summary_ollama, generate_summary_extractive,
     load_config, save_config, check_dependencies,
     save_link_to_history, load_link_history, remove_link_from_history
 )
@@ -90,7 +90,6 @@ class TranscribeYTGUI:
 
         self.model_combo = Gtk.ComboBoxText()
         self.model_combo.append_text("Extractive (Detailed)")
-        self.model_combo.append_text("NLP (Hugging Face)")
         self.model_combo.append_text("DeepSeek API")
         self.model_combo.append_text("Ollama (Local)")
         self.model_combo.set_active(0)  # Set Extractive as default
@@ -569,10 +568,7 @@ Features:
 
         if model_index == 0:  # Extractive
             return generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
-        elif model_index == 1:  # NLP/Hugging Face
-            huggingface_model = self.config.get("huggingface_model", "facebook/bart-large-cnn")
-            return generate_summary_huggingface(txt_path, huggingface_model, chunk_size, use_ollama_formatting, ollama_formatting_model)
-        elif model_index == 2:  # DeepSeek
+        elif model_index == 1:  # DeepSeek
             api_key = self.config.get("deepseek_api_key")
             if not api_key:
                 GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
@@ -874,15 +870,6 @@ Features:
             api_key_entry.set_text(self.config["deepseek_api_key"])
         content_area.pack_start(api_key_entry, True, True, 0)
 
-        # Hugging Face model entry
-        huggingface_label = Gtk.Label("Hugging Face Model:")
-        huggingface_label.set_halign(Gtk.Align.START)
-        content_area.pack_start(huggingface_label, False, False, 0)
-
-        huggingface_entry = Gtk.Entry()
-        huggingface_entry.set_placeholder_text("e.g., facebook/bart-large-cnn")
-        huggingface_entry.set_text(self.config.get("huggingface_model", "facebook/bart-large-cnn"))
-        content_area.pack_start(huggingface_entry, True, True, 0)
 
         # Ollama model entry
         ollama_label = Gtk.Label("Ollama Model:")
@@ -927,7 +914,6 @@ Features:
         if response == Gtk.ResponseType.OK:
             # Save configuration
             self.config["deepseek_api_key"] = api_key_entry.get_text()
-            self.config["huggingface_model"] = huggingface_entry.get_text()
             self.config["ollama_model"] = ollama_entry.get_text()
             self.config["ollama_formatting_model"] = ollama_formatting_entry.get_text()
             self.config["use_ollama_formatting"] = use_ollama_formatting_check.get_active()
