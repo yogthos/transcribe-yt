@@ -62,28 +62,28 @@ class TranscribeYTGUI:
 
         # Add keyboard shortcuts for common operations
         # Cmd+V for paste (Ctrl+V on other platforms)
-        self.add_shortcut("v", Gdk.ModifierType.CONTROL_MASK, self.on_paste)
+        self.add_shortcut("v", Gdk.ModifierType.META_MASK, self.on_paste)
 
         # Cmd+C for copy (Ctrl+C on other platforms)
-        self.add_shortcut("c", Gdk.ModifierType.CONTROL_MASK, self.on_copy)
+        self.add_shortcut("c", Gdk.ModifierType.META_MASK, self.on_copy)
 
         # Cmd+A for select all (Ctrl+A on other platforms)
-        self.add_shortcut("a", Gdk.ModifierType.CONTROL_MASK, self.on_select_all)
+        self.add_shortcut("a", Gdk.ModifierType.META_MASK, self.on_select_all)
 
         # Cmd+Z for undo (Ctrl+Z on other platforms)
-        self.add_shortcut("z", Gdk.ModifierType.CONTROL_MASK, self.on_undo)
+        self.add_shortcut("z", Gdk.ModifierType.META_MASK, self.on_undo)
 
         # Cmd+Enter for transcribe (Ctrl+Enter on other platforms)
-        self.add_shortcut("Return", Gdk.ModifierType.CONTROL_MASK, self.on_transcribe_clicked)
+        self.add_shortcut("Return", Gdk.ModifierType.META_MASK, self.on_transcribe_clicked)
 
         # Cmd+R for refresh/retry
-        self.add_shortcut("r", Gdk.ModifierType.CONTROL_MASK, self.on_transcribe_clicked)
+        self.add_shortcut("r", Gdk.ModifierType.META_MASK, self.on_transcribe_clicked)
 
         # Escape to clear URL field
         self.add_shortcut("Escape", 0, self.on_escape)
 
         # Cmd+, for preferences (common macOS shortcut)
-        self.add_shortcut("comma", Gdk.ModifierType.CONTROL_MASK, self.show_preferences)
+        self.add_shortcut("comma", Gdk.ModifierType.META_MASK, self.show_preferences)
 
     def add_shortcut(self, key, modifier, callback):
         """Add a keyboard shortcut"""
