@@ -149,7 +149,14 @@ def main():
         sys.exit(1)
 
     # Check if required files exist
-    required_files = ["transcribe_yt_gui.py", "transcribe_yt.py"]
+    required_files = [
+        "transcribe_yt_gui.py",
+        "transcribe_yt.py",
+        "config.py",
+        "download.py",
+        "transcription.py",
+        "summarization.py"
+    ]
     missing_files = [f for f in required_files if not os.path.exists(f)]
 
     if missing_files:
