@@ -170,19 +170,31 @@ def main():
     copy_external_binaries()
 
     # Download Hugging Face model after build
-    print("\nDownloading Hugging Face model...")
-    app_path = "dist/TranscribeYouTube.app"
-    resources_path = os.path.join(app_path, "Contents", "Resources")
+    print("\nSkipping spaCy English model download during build...")
+    print("The model will be downloaded automatically on first use of extractive summarization.")
 
+    print("\nDownloading Hugging Face model...")
     try:
         # Run a Python script to download the model
         download_script = """
 import sys
+import os
 sys.path.insert(0, '.')
+
+# Set custom cache directory for models
+cache_dir = os.path.expanduser("~/.transcribe-yt/models")
+os.makedirs(cache_dir, exist_ok=True)
+
+# Set environment variables for transformers cache
+os.environ['TRANSFORMERS_CACHE'] = cache_dir
+os.environ['HF_HOME'] = cache_dir
+
+print(f"Using model cache directory: {{cache_dir}}")
+
 try:
     from transformers import pipeline
     print("Downloading facebook/bart-large-cnn model...")
-    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn", cache_dir=cache_dir)
     print("Hugging Face model downloaded successfully")
 except Exception as e:
     print(f"Warning: Failed to download Hugging Face model: {{e}}")

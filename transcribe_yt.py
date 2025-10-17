@@ -907,10 +907,21 @@ def generate_summary_huggingface(transcription_path: str, model: str = "facebook
     try:
         # Import transformers (will fail gracefully if not installed)
         from transformers import pipeline
+        import os
+
+        # Set custom cache directory for models
+        cache_dir = os.path.expanduser("~/.transcribe-yt/models")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        # Set environment variable for transformers cache
+        os.environ['TRANSFORMERS_CACHE'] = cache_dir
+        os.environ['HF_HOME'] = cache_dir
+
+        print(f"Using model cache directory: {cache_dir}")
 
         # Load the summarization pipeline
         print(f"Loading summarization model: {model}...")
-        summarizer = pipeline("summarization", model=model)
+        summarizer = pipeline("summarization", model=model, cache_dir=cache_dir)
 
         # If chunk_size is specified, process in chunks
         if chunk_size and chunk_size > 0:
@@ -996,7 +1007,20 @@ def generate_summary_extractive(transcription_path: str, chunk_size: int = None,
             from spacy.lang.en.stop_words import STOP_WORDS
 
             # Load English model
-            nlp = spacy.load("en_core_web_sm")
+            try:
+                nlp = spacy.load("en_core_web_sm")
+            except OSError as e:
+                print(f"spaCy English model not found: {e}")
+                print("Attempting to download the model...")
+                import subprocess
+                import sys
+                try:
+                    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=True)
+                    nlp = spacy.load("en_core_web_sm")
+                    print("spaCy English model downloaded and loaded successfully")
+                except subprocess.CalledProcessError as download_error:
+                    print(f"Failed to download spaCy model: {download_error}")
+                    raise ImportError("spaCy English model not available and could not be downloaded")
 
             # Process the text
             doc = nlp(transcription)

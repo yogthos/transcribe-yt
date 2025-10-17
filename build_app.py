@@ -330,7 +330,7 @@ except Exception as e:
 
     # Create a virtual environment in the app bundle
     print("Creating virtual environment in app bundle...")
-    venv_path = f"{resources_path}/venv"
+    venv_path = os.path.join(resources_path, "venv")
 
     try:
         subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
@@ -341,8 +341,8 @@ except Exception as e:
 
     # Install dependencies in the virtual environment
     print("Installing dependencies...")
-    pip_path = f"{venv_path}/bin/pip"
-    requirements_path = f"{resources_path}/requirements.txt"
+    pip_path = os.path.join(venv_path, "bin", "pip")
+    requirements_path = os.path.join(resources_path, "requirements.txt")
 
     # Set environment for pip to find GTK-related packages
     env = os.environ.copy()
@@ -363,25 +363,13 @@ except Exception as e:
         print("Failed to copy GTK dependencies")
         return False
 
-    # Download Hugging Face model during build
-    print("Downloading Hugging Face model...")
-    python_path = f"{venv_path}/bin/python"
-    try:
-        subprocess.run([
-            python_path, "-c",
-            """
-import sys
-sys.path.insert(0, '.')
-from transformers import pipeline
-print("Downloading facebook/bart-large-cnn model...")
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-print("Hugging Face model downloaded successfully")
-"""
-        ], check=True, cwd=resources_path, env=env)
-        print("Hugging Face model downloaded successfully")
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Failed to download Hugging Face model: {e}")
-        print("The model will be downloaded on first use instead")
+    # Skip spaCy model download during build due to PyTorch circular import issues
+    print("Skipping spaCy English model download during build...")
+    print("The model will be downloaded automatically on first use of extractive summarization.")
+
+    # Skip Hugging Face model download during build due to potential torch import issues
+    print("Skipping Hugging Face model download during build...")
+    print("The model will be downloaded automatically on first use of the application.")
 
     print(f"\n✅ {app_name}.app bundle created successfully!")
     print(f"Location: {os.path.abspath(app_bundle_path)}")
