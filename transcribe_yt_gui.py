@@ -30,6 +30,9 @@ class TranscribeYTGUI:
         self.window.set_resizable(True)
         self.window.connect("destroy", self.on_window_destroy)
 
+        # Add keyboard shortcuts
+        self.setup_keyboard_shortcuts()
+
         # Create main container
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.main_box.set_margin_left(10)
@@ -50,6 +53,119 @@ class TranscribeYTGUI:
         # Load configuration
         self.config = load_config()
         self.update_config_ui()
+
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for macOS compatibility"""
+        # Create an accelerator group
+        self.accel_group = Gtk.AccelGroup()
+        self.window.add_accel_group(self.accel_group)
+
+        # Add keyboard shortcuts for common operations
+        # Cmd+V for paste (Ctrl+V on other platforms)
+        self.add_shortcut("v", Gdk.ModifierType.CONTROL_MASK, self.on_paste)
+
+        # Cmd+C for copy (Ctrl+C on other platforms)
+        self.add_shortcut("c", Gdk.ModifierType.CONTROL_MASK, self.on_copy)
+
+        # Cmd+A for select all (Ctrl+A on other platforms)
+        self.add_shortcut("a", Gdk.ModifierType.CONTROL_MASK, self.on_select_all)
+
+        # Cmd+Z for undo (Ctrl+Z on other platforms)
+        self.add_shortcut("z", Gdk.ModifierType.CONTROL_MASK, self.on_undo)
+
+        # Cmd+Enter for transcribe (Ctrl+Enter on other platforms)
+        self.add_shortcut("Return", Gdk.ModifierType.CONTROL_MASK, self.on_transcribe_clicked)
+
+        # Cmd+R for refresh/retry
+        self.add_shortcut("r", Gdk.ModifierType.CONTROL_MASK, self.on_transcribe_clicked)
+
+        # Escape to clear URL field
+        self.add_shortcut("Escape", 0, self.on_escape)
+
+        # Cmd+, for preferences (common macOS shortcut)
+        self.add_shortcut("comma", Gdk.ModifierType.CONTROL_MASK, self.show_preferences)
+
+    def add_shortcut(self, key, modifier, callback):
+        """Add a keyboard shortcut"""
+        keyval = Gdk.keyval_from_name(key)
+        if keyval != 0:
+            self.accel_group.connect(keyval, modifier, 0, callback)
+
+    def on_paste(self, accel_group, acceleratable, keyval, modifier):
+        """Handle paste shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, paste into them
+                focused.paste_clipboard()
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, paste into them
+                focused.paste_clipboard()
+        return True
+
+    def on_copy(self, accel_group, acceleratable, keyval, modifier):
+        """Handle copy shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, copy from them
+                focused.copy_clipboard()
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, copy from them
+                focused.copy_clipboard()
+        return True
+
+    def on_select_all(self, accel_group, acceleratable, keyval, modifier):
+        """Handle select all shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, select all text
+                focused.select_region(0, -1)
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, select all text
+                buffer = focused.get_buffer()
+                start = buffer.get_start_iter()
+                end = buffer.get_end_iter()
+                buffer.select_range(start, end)
+        return True
+
+    def on_undo(self, accel_group, acceleratable, keyval, modifier):
+        """Handle undo shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, try to undo
+                if hasattr(focused, 'get_buffer'):
+                    buffer = focused.get_buffer()
+                    if hasattr(buffer, 'undo'):
+                        buffer.undo()
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, try to undo
+                buffer = focused.get_buffer()
+                if hasattr(buffer, 'undo'):
+                    buffer.undo()
+        return True
+
+    def on_escape(self, accel_group, acceleratable, keyval, modifier):
+        """Handle escape key"""
+        # Clear the URL entry field
+        self.url_entry.set_text("")
+        self.url_entry.grab_focus()
+        return True
+
+    def show_preferences(self, accel_group, acceleratable, keyval, modifier):
+        """Handle Cmd+, shortcut to show preferences"""
+        self.show_settings_dialog()
+        return True
 
     def create_input_section(self):
         """Create the input section with URL field and controls"""
@@ -74,6 +190,9 @@ class TranscribeYTGUI:
         self.url_entry = Gtk.Entry()
         self.url_entry.set_placeholder_text("https://youtube.com/watch?v=...")
         self.url_entry.connect("activate", self.on_transcribe_clicked)
+
+        # Enable proper keyboard shortcuts for the URL entry
+        self.url_entry.set_can_focus(True)
 
         url_box.pack_start(url_label, False, False, 0)
         url_box.pack_start(self.url_entry, True, True, 0)
@@ -316,6 +435,9 @@ class TranscribeYTGUI:
         self.summary_textview.set_editable(False)
         self.summary_textview.set_wrap_mode(Gtk.WrapMode.WORD)
         self.summary_textview.set_margin_left(10)
+
+        # Enable clipboard operations for the summary textview
+        self.summary_textview.set_can_focus(True)
         self.summary_textview.set_margin_right(10)
         self.summary_textview.set_margin_top(10)
         self.summary_textview.set_margin_bottom(10)
