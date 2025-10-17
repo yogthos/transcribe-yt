@@ -363,6 +363,26 @@ except Exception as e:
         print("Failed to copy GTK dependencies")
         return False
 
+    # Download Hugging Face model during build
+    print("Downloading Hugging Face model...")
+    python_path = f"{venv_path}/bin/python"
+    try:
+        subprocess.run([
+            python_path, "-c",
+            """
+import sys
+sys.path.insert(0, '.')
+from transformers import pipeline
+print("Downloading facebook/bart-large-cnn model...")
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+print("Hugging Face model downloaded successfully")
+"""
+        ], check=True, cwd=resources_path, env=env)
+        print("Hugging Face model downloaded successfully")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Failed to download Hugging Face model: {e}")
+        print("The model will be downloaded on first use instead")
+
     print(f"\n✅ {app_name}.app bundle created successfully!")
     print(f"Location: {os.path.abspath(app_bundle_path)}")
     print("\nTo run the app:")

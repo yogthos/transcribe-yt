@@ -3,6 +3,10 @@
 # Core dependencies
 requests>=2.25.0
 
+# Hugging Face Transformers for summarization
+transformers>=4.30.0
+torch>=2.0.0
+
 # Audio processing
 nemo_toolkit[asr]>=1.21.0
 librosa>=0.10.0
@@ -25,6 +29,9 @@ PyGObject>=3.42.0
 markdown>=3.4.0
 beautifulsoup4>=4.9.0
 # Note: GtkHTML is typically provided by the system GTK installation
+
+# NLP dependencies for extractive summarization
+spacy>=3.7.0
 
 # Packaging dependencies (optional)
 pyinstaller>=5.0.0

@@ -33,6 +33,9 @@ def load_config():
     default_config = {
         "deepseek_api_key": None,
         "ollama_model": "vicuna:7b",
+        "huggingface_model": "facebook/bart-large-cnn",
+        "ollama_formatting_model": "nous-hermes2-mixtral:latest",
+        "use_ollama_formatting": True,
         "chunk_duration": 300,
         "overlap_duration": 30,
         "summary_chunk_size": None,  # None means no chunking, 0 means full text
@@ -763,6 +766,298 @@ Summary:"""
     return str(md_path)
 
 
+def format_summary_with_ollama(summary_text: str, ollama_model: str = "nous-hermes2-mixtral:latest") -> str:
+    """
+    Format a summary using Ollama to improve readability while preserving all content
+
+    Args:
+        summary_text: The summary text to format
+        ollama_model: Ollama model to use for formatting
+
+    Returns:
+        Formatted summary text
+    """
+    import requests
+
+    print(f"Formatting summary with Ollama model: {ollama_model}...")
+
+    prompt = f"""Please reformat the following summary text for better readability and organization.
+IMPORTANT: Do NOT omit any content or change the meaning. Only improve the formatting, structure, and flow.
+
+SPECIFIC FORMATTING INSTRUCTIONS:
+- Add clear headings to organize the content into logical sections
+- Break the text into well-structured paragraphs with proper spacing
+- Use appropriate heading levels (H1, H2, H3) to create a hierarchical structure
+- Ensure each paragraph focuses on one main idea
+- Use bullet points or numbered lists where appropriate for clarity
+- Maintain all original information and details
+
+Original summary:
+{summary_text}
+
+Reformatted summary with headings and paragraph breaks:"""
+
+    data = {
+        "model": ollama_model,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 0.3,  # Lower temperature for more consistent formatting
+            "num_ctx": 131072
+        }
+    }
+
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/chat",
+            json=data,
+            timeout=120  # Allow more time for formatting
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        formatted_summary = result.get("message", {}).get("content", "")
+
+        if formatted_summary:
+            print("✓ Summary formatted successfully with Ollama")
+            return formatted_summary
+        else:
+            print("⚠️ Ollama returned empty response, using original summary")
+            return summary_text
+
+    except requests.RequestException as e:
+        print(f"⚠️ Ollama formatting failed: {e}")
+        print("Using original summary without formatting")
+        return summary_text
+
+
+def generate_summary_huggingface(transcription_path: str, model: str = "facebook/bart-large-cnn", chunk_size: int = None, use_ollama_formatting: bool = True, ollama_formatting_model: str = "nous-hermes2-mixtral:latest") -> str:
+    """
+    Generate summary using Hugging Face Transformers pipeline with optional chunking
+    and Ollama post-processing for improved readability
+
+    Args:
+        transcription_path: Path to the transcription text file
+        model: Hugging Face model name (default: facebook/bart-large-cnn)
+        chunk_size: Number of words per chunk (None for no chunking)
+        use_ollama_formatting: Whether to use Ollama for post-processing (default: True)
+        ollama_formatting_model: Ollama model to use for formatting (default: nous-hermes2-mixtral:latest)
+
+    Returns:
+        Path to the summary markdown file
+    """
+    transcription_path = Path(transcription_path)
+    md_path = transcription_path.with_suffix(".md")
+
+    with open(transcription_path, 'r', encoding='utf-8') as f:
+        transcription = f.read()
+
+    print(f"Generating summary using Hugging Face model: {model}...")
+    print(f"Transcript length: {len(transcription):,} characters")
+
+    try:
+        # Import transformers (will fail gracefully if not installed)
+        from transformers import pipeline
+
+        # Load the summarization pipeline
+        print(f"Loading summarization model: {model}...")
+        summarizer = pipeline("summarization", model=model)
+
+        # If chunk_size is specified, process in chunks
+        if chunk_size and chunk_size > 0:
+            print(f"Processing transcript in chunks of {chunk_size} words...")
+            chunks = chunk_text(transcription, chunk_size)
+            print(f"Split into {len(chunks)} chunks")
+
+            chunk_summaries = []
+
+            for i, chunk in enumerate(chunks, 1):
+                print(f"Processing chunk {i}/{len(chunks)} ({len(chunk.split())} words)...")
+
+                try:
+                    # Generate detailed summary for this chunk
+                    # Use more generous parameters for detailed summaries
+                    chunk_word_count = len(chunk.split())
+                    max_length = min(512, max(100, chunk_word_count // 3))  # Target ~33% of input length
+                    min_length = max(50, max_length // 2)  # Ensure substantial summaries
+
+                    summary_result = summarizer(chunk, max_length=max_length, min_length=min_length, do_sample=False)
+                    chunk_summary = summary_result[0]['summary_text']
+                    chunk_summaries.append(f"## Chunk {i} Summary\n\n{chunk_summary}\n")
+
+                except Exception as e:
+                    print(f"Error processing chunk {i}: {e}")
+                    chunk_summaries.append(f"## Chunk {i} Summary\n\n*Error processing this chunk*\n")
+
+            # Combine all chunk summaries
+            final_summary = "# Detailed Summary\n\n" + "\n".join(chunk_summaries)
+
+        else:
+            # Process entire transcript at once
+            print("Processing entire transcript in one pass...")
+
+            # Calculate appropriate max_length based on input length for detailed summaries
+            input_length = len(transcription.split())
+            max_length = min(1024, max(200, input_length // 3))  # Target ~33% of input length for detailed summaries
+            min_length = max(100, max_length // 2)  # Ensure substantial summaries
+
+            print(f"Using max_length={max_length}, min_length={min_length} for detailed summary")
+
+            summary_result = summarizer(transcription, max_length=max_length, min_length=min_length, do_sample=False)
+            final_summary = summary_result[0]['summary_text']
+
+        # Apply Ollama formatting for improved readability if requested
+        if use_ollama_formatting:
+            print("Applying Ollama formatting for improved readability...")
+            try:
+                final_summary = format_summary_with_ollama(final_summary, ollama_formatting_model)
+                print("✓ Ollama formatting applied successfully")
+            except Exception as e:
+                print(f"⚠️ Ollama formatting failed: {e}")
+                print("Using original summary without formatting")
+
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write(final_summary)
+
+        print(f"Summary saved to: {md_path}")
+        return str(md_path)
+
+    except ImportError:
+        raise RuntimeError("transformers library not installed. Please install with: pip install transformers torch")
+    except Exception as e:
+        raise RuntimeError(f"Failed to generate summary with Hugging Face: {e}")
+
+
+def generate_summary_extractive(transcription_path: str, chunk_size: int = None, use_ollama_formatting: bool = True, ollama_formatting_model: str = "nous-hermes2-mixtral:latest") -> str:
+    """
+    Generate detailed summary using extractive summarization (selecting important sentences)
+    This approach preserves more details and produces longer, more accurate summaries
+
+    Args:
+        transcription_path: Path to the transcription text file
+        chunk_size: Number of words per chunk (None for no chunking)
+        use_ollama_formatting: Whether to use Ollama for post-processing (default: True)
+        ollama_formatting_model: Ollama model to use for formatting (default: nous-hermes2-mixtral:latest)
+
+    Returns:
+        Path to the summary markdown file
+    """
+    transcription_path = Path(transcription_path)
+    md_path = transcription_path.with_suffix(".md")
+
+    with open(transcription_path, 'r', encoding='utf-8') as f:
+        transcription = f.read()
+
+    print("Generating detailed summary using extractive summarization...")
+    print(f"Transcript length: {len(transcription):,} characters")
+
+    try:
+        # Use spaCy for extractive summarization if available
+        try:
+            import spacy
+            from spacy.lang.en.stop_words import STOP_WORDS
+
+            # Load English model
+            nlp = spacy.load("en_core_web_sm")
+
+            # Process the text
+            doc = nlp(transcription)
+
+            # Calculate sentence scores based on word frequency
+            word_frequencies = {}
+            for word in doc:
+                if word.text.lower() not in STOP_WORDS and word.text.lower() not in ['\n', '\t', ' '] and word.pos_ != 'PUNCT':
+                    if word.text not in word_frequencies.keys():
+                        word_frequencies[word.text] = 1
+                    else:
+                        word_frequencies[word.text] += 1
+
+            # Normalize frequencies
+            max_frequency = max(word_frequencies.values()) if word_frequencies else 1
+            for word in word_frequencies.keys():
+                word_frequencies[word] = word_frequencies[word] / max_frequency
+
+            # Score sentences
+            sentence_scores = {}
+            for sent in doc.sents:
+                for word in sent:
+                    if word.text.lower() in word_frequencies.keys():
+                        if sent not in sentence_scores.keys():
+                            sentence_scores[sent] = word_frequencies[word.text.lower()]
+                        else:
+                            sentence_scores[sent] += word_frequencies[word.text.lower()]
+
+            # Select top sentences (aim for ~40% of original text)
+            target_sentences = max(3, len(list(doc.sents)) // 3)
+            sorted_sentences = sorted(sentence_scores.items(), key=lambda x: x[1], reverse=True)
+
+            # Select top sentences
+            selected_sentences = []
+            for sent, score in sorted_sentences[:target_sentences]:
+                selected_sentences.append(sent.text.strip())
+
+            # Create summary
+            final_summary = "# Detailed Summary\n\n" + " ".join(selected_sentences)
+
+        except ImportError:
+            # Fallback to simple sentence selection if spaCy is not available
+            print("spaCy not available, using simple extractive summarization...")
+
+            import re
+
+            # Split into sentences
+            sentences = re.split(r'(?<=[.!?])\s+', transcription)
+
+            # Simple scoring based on sentence length and keywords
+            def score_sentence(sentence):
+                # Score based on length (longer sentences often contain more information)
+                length_score = len(sentence.split()) / 20.0
+
+                # Score based on important keywords
+                keywords = ['important', 'key', 'main', 'primary', 'significant', 'major',
+                           'conclusion', 'summary', 'overview', 'discuss', 'explain', 'describe']
+                keyword_score = sum(1 for keyword in keywords if keyword in sentence.lower()) * 2
+
+                return length_score + keyword_score
+
+            # Score all sentences
+            scored_sentences = [(sentence, score_sentence(sentence)) for sentence in sentences if len(sentence.split()) > 5]
+
+            # Select top sentences (~40% of original)
+            target_sentences = max(3, len(scored_sentences) // 3)
+            sorted_sentences = sorted(scored_sentences, key=lambda x: x[1], reverse=True)
+
+            # Select top sentences
+            selected_sentences = [sentence for sentence, score in sorted_sentences[:target_sentences]]
+
+            # Create summary
+            final_summary = "# Detailed Summary\n\n" + " ".join(selected_sentences)
+
+        # Apply Ollama formatting for improved readability if requested
+        if use_ollama_formatting:
+            print("Applying Ollama formatting for improved readability...")
+            try:
+                final_summary = format_summary_with_ollama(final_summary, ollama_formatting_model)
+                print("✓ Ollama formatting applied successfully")
+            except Exception as e:
+                print(f"⚠️ Ollama formatting failed: {e}")
+                print("Using original summary without formatting")
+
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write(final_summary)
+
+        print(f"Summary saved to: {md_path}")
+        return str(md_path)
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to generate extractive summary: {e}")
+
+
 def check_dependencies():
     """Check if required dependencies are available"""
     # Check if ffmpeg is available
@@ -780,10 +1075,12 @@ def main():
     parser = argparse.ArgumentParser(description="YouTube Video Transcription and Summarization Tool")
     parser.add_argument("url", nargs="?", help="YouTube video URL")
     parser.add_argument("--output-dir", "-o", default="~/.transcribe-yt/transcripts", help="Output directory (default: ~/.transcribe-yt/transcripts)")
-    parser.add_argument("--model", choices=["deepseek", "ollama"], default="deepseek",
-                       help="Summary model to use (default: deepseek)")
+    parser.add_argument("--model", choices=["huggingface", "deepseek", "ollama", "extractive"], default="extractive",
+                       help="Summary model to use (default: extractive)")
     parser.add_argument("--ollama-model", default="vicuna:7b",
                        help="Ollama model name (default: vicuna:7b)")
+    parser.add_argument("--huggingface-model", default="facebook/bart-large-cnn",
+                       help="Hugging Face model name (default: facebook/bart-large-cnn)")
     parser.add_argument("--force-transcribe", action="store_true",
                        help="Force audio transcription even if subtitles are available")
 
@@ -798,6 +1095,7 @@ def main():
 
     # Configuration management options
     parser.add_argument("--set-api-key", help="Set DeepSeek API key in configuration")
+    parser.add_argument("--set-huggingface-model", help="Set default Hugging Face model in configuration")
     parser.add_argument("--set-chunk-duration", type=int, help="Set default chunk duration in configuration")
     parser.add_argument("--set-overlap-duration", type=int, help="Set default overlap duration in configuration")
     parser.add_argument("--set-summary-chunk-size", type=int, help="Set default summary chunk size in configuration")
@@ -812,6 +1110,13 @@ def main():
         config["deepseek_api_key"] = args.set_api_key
         save_config(config)
         print("DeepSeek API key saved to configuration")
+        return
+
+    if args.set_huggingface_model:
+        config = load_config()
+        config["huggingface_model"] = args.set_huggingface_model
+        save_config(config)
+        print(f"Hugging Face model set to: {args.set_huggingface_model}")
         return
 
     if args.set_chunk_duration:
@@ -887,13 +1192,23 @@ def main():
             txt_path = transcribe_audio(mp3_path, args.chunk_duration, args.overlap_duration)
 
         # Step 3: Generate summary
-        if args.model == "deepseek":
+        if args.model == "huggingface":
+            config = load_config()
+            huggingface_model = config.get("huggingface_model", args.huggingface_model)
+            chunk_size = args.summary_chunk_size
+            use_ollama_formatting = config.get("use_ollama_formatting", True)
+            ollama_formatting_model = config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
+            md_path = generate_summary_huggingface(txt_path, huggingface_model, chunk_size, use_ollama_formatting)
+        elif args.model == "deepseek":
             config = load_config()
             api_key = config.get("deepseek_api_key")
             if not api_key:
                 raise ValueError("DeepSeek API key not set. Use --set-api-key to configure it.")
             chunk_size = args.summary_chunk_size
             md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
+        elif args.model == "extractive":
+            chunk_size = args.summary_chunk_size
+            md_path = generate_summary_extractive(txt_path, chunk_size)
         else:
             config = load_config()
             ollama_model = config.get("ollama_model", args.ollama_model)

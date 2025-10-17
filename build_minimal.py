@@ -169,6 +169,43 @@ def main():
     print("\nCopying external binaries...")
     copy_external_binaries()
 
+    # Download Hugging Face model after build
+    print("\nDownloading Hugging Face model...")
+    app_path = "dist/TranscribeYouTube.app"
+    resources_path = os.path.join(app_path, "Contents", "Resources")
+
+    try:
+        # Run a Python script to download the model
+        download_script = """
+import sys
+sys.path.insert(0, '.')
+try:
+    from transformers import pipeline
+    print("Downloading facebook/bart-large-cnn model...")
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+    print("Hugging Face model downloaded successfully")
+except Exception as e:
+    print(f"Warning: Failed to download Hugging Face model: {{e}}")
+    print("The model will be downloaded on first use instead")
+"""
+
+        # Write the download script to a temporary file
+        download_script_path = os.path.join(resources_path, "download_model.py")
+        with open(download_script_path, "w") as f:
+            f.write(download_script)
+
+        # Run the download script
+        python_cmd = [sys.executable, download_script_path]
+        subprocess.run(python_cmd, check=True, cwd=resources_path)
+
+        # Clean up the temporary script
+        os.remove(download_script_path)
+
+        print("Hugging Face model downloaded successfully")
+    except Exception as e:
+        print(f"Warning: Failed to download Hugging Face model: {e}")
+        print("The model will be downloaded on first use instead")
+
     # Sign the app bundle
     print("\nSigning app bundle...")
     if not sign_app_bundle():

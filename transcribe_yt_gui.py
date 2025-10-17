@@ -17,7 +17,7 @@ from pathlib import Path
 # Import the transcription logic from the main module
 from transcribe_yt import (
     download_subtitles, download_audio, convert_srt_to_text,
-    transcribe_audio, generate_summary_deepseek, generate_summary_ollama,
+    transcribe_audio, generate_summary_deepseek, generate_summary_ollama, generate_summary_huggingface, generate_summary_extractive,
     load_config, save_config, check_dependencies,
     save_link_to_history, load_link_history, remove_link_from_history
 )
@@ -89,9 +89,11 @@ class TranscribeYTGUI:
         model_label.set_halign(Gtk.Align.START)
 
         self.model_combo = Gtk.ComboBoxText()
+        self.model_combo.append_text("Extractive (Detailed)")
+        self.model_combo.append_text("NLP (Hugging Face)")
         self.model_combo.append_text("DeepSeek API")
         self.model_combo.append_text("Ollama (Local)")
-        self.model_combo.set_active(0)
+        self.model_combo.set_active(0)  # Set Extractive as default
 
         model_box.pack_start(model_label, False, False, 0)
         model_box.pack_start(self.model_combo, False, False, 0)
@@ -500,7 +502,16 @@ Features:
             if chunk_size == 0:
                 chunk_size = None  # No chunking for full text
 
-            if model_index == 0:  # DeepSeek
+            if model_index == 0:  # Extractive
+                use_ollama_formatting = self.config.get("use_ollama_formatting", True)
+                ollama_formatting_model = self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
+                md_path = generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
+            elif model_index == 1:  # NLP/Hugging Face
+                huggingface_model = self.config.get("huggingface_model", "facebook/bart-large-cnn")
+                use_ollama_formatting = self.config.get("use_ollama_formatting", True)
+                ollama_formatting_model = self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
+                md_path = generate_summary_huggingface(txt_path, huggingface_model, chunk_size, use_ollama_formatting, ollama_formatting_model)
+            elif model_index == 2:  # DeepSeek
                 api_key = self.config.get("deepseek_api_key")
                 if not api_key:
                     GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
@@ -621,7 +632,7 @@ Features:
             # Apply formatting
             end_iter = buffer.get_end_iter()
             start_iter = end_iter.copy()
-            start_iter.backward_chars(len(text) + 1)
+            start_iter.backward_chars(len(text))  # Only go back the length of the text, not including newline
 
             if element.name == 'h1':
                 buffer.apply_tag_by_name("large", start_iter, end_iter)
@@ -815,6 +826,16 @@ Features:
             api_key_entry.set_text(self.config["deepseek_api_key"])
         content_area.pack_start(api_key_entry, True, True, 0)
 
+        # Hugging Face model entry
+        huggingface_label = Gtk.Label("Hugging Face Model:")
+        huggingface_label.set_halign(Gtk.Align.START)
+        content_area.pack_start(huggingface_label, False, False, 0)
+
+        huggingface_entry = Gtk.Entry()
+        huggingface_entry.set_placeholder_text("e.g., facebook/bart-large-cnn")
+        huggingface_entry.set_text(self.config.get("huggingface_model", "facebook/bart-large-cnn"))
+        content_area.pack_start(huggingface_entry, True, True, 0)
+
         # Ollama model entry
         ollama_label = Gtk.Label("Ollama Model:")
         ollama_label.set_halign(Gtk.Align.START)
@@ -824,6 +845,21 @@ Features:
         ollama_entry.set_placeholder_text("e.g., vicuna:7b")
         ollama_entry.set_text(self.config.get("ollama_model", "vicuna:7b"))
         content_area.pack_start(ollama_entry, True, True, 0)
+
+        # Ollama formatting model entry
+        ollama_formatting_label = Gtk.Label("Ollama Formatting Model:")
+        ollama_formatting_label.set_halign(Gtk.Align.START)
+        content_area.pack_start(ollama_formatting_label, False, False, 0)
+
+        ollama_formatting_entry = Gtk.Entry()
+        ollama_formatting_entry.set_placeholder_text("e.g., nous-hermes2-mixtral:latest")
+        ollama_formatting_entry.set_text(self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest"))
+        content_area.pack_start(ollama_formatting_entry, True, True, 0)
+
+        # Use Ollama formatting checkbox
+        use_ollama_formatting_check = Gtk.CheckButton(label="Use Ollama formatting for NLP summaries")
+        use_ollama_formatting_check.set_active(self.config.get("use_ollama_formatting", True))
+        content_area.pack_start(use_ollama_formatting_check, False, False, 0)
 
         # Summary chunk size entry
         chunk_label = Gtk.Label("Summary Chunk Size (words):")
@@ -843,7 +879,10 @@ Features:
         if response == Gtk.ResponseType.OK:
             # Save configuration
             self.config["deepseek_api_key"] = api_key_entry.get_text()
+            self.config["huggingface_model"] = huggingface_entry.get_text()
             self.config["ollama_model"] = ollama_entry.get_text()
+            self.config["ollama_formatting_model"] = ollama_formatting_entry.get_text()
+            self.config["use_ollama_formatting"] = use_ollama_formatting_check.get_active()
 
             # Handle chunk size
             chunk_text = chunk_entry.get_text().strip()
