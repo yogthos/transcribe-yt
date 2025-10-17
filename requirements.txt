@@ -3,6 +3,7 @@
 # Core dependencies
 requests>=2.25.0
 
+
 # Audio processing
 nemo_toolkit[asr]>=1.21.0
 librosa>=0.10.0
@@ -23,8 +24,12 @@ protobuf==5.29.5
 # GUI dependencies
 PyGObject>=3.42.0
 markdown>=3.4.0
+pygments>=2.0.0
 beautifulsoup4>=4.9.0
 # Note: GtkHTML is typically provided by the system GTK installation
+
+# NLP dependencies for extractive summarization
+spacy>=3.7.0
 
 # Packaging dependencies (optional)
 pyinstaller>=5.0.0

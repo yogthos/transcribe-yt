@@ -169,6 +169,10 @@ def main():
     print("\nCopying external binaries...")
     copy_external_binaries()
 
+    print("\nSkipping spaCy English model download during build...")
+    print("The model will be downloaded automatically on first use of extractive summarization.")
+
+
     # Sign the app bundle
     print("\nSigning app bundle...")
     if not sign_app_bundle():

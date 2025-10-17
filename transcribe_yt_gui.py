@@ -17,7 +17,7 @@ from pathlib import Path
 # Import the transcription logic from the main module
 from transcribe_yt import (
     download_subtitles, download_audio, convert_srt_to_text,
-    transcribe_audio, generate_summary_deepseek, generate_summary_ollama,
+    transcribe_audio, generate_summary_deepseek, generate_summary_ollama, generate_summary_extractive,
     load_config, save_config, check_dependencies,
     save_link_to_history, load_link_history, remove_link_from_history
 )
@@ -29,6 +29,9 @@ class TranscribeYTGUI:
         self.window.set_default_size(900, 700)
         self.window.set_resizable(True)
         self.window.connect("destroy", self.on_window_destroy)
+
+        # Add keyboard shortcuts
+        self.setup_keyboard_shortcuts()
 
         # Create main container
         self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -50,6 +53,119 @@ class TranscribeYTGUI:
         # Load configuration
         self.config = load_config()
         self.update_config_ui()
+
+    def setup_keyboard_shortcuts(self):
+        """Setup keyboard shortcuts for macOS compatibility"""
+        # Create an accelerator group
+        self.accel_group = Gtk.AccelGroup()
+        self.window.add_accel_group(self.accel_group)
+
+        # Add keyboard shortcuts for common operations
+        # Cmd+V for paste (Ctrl+V on other platforms)
+        self.add_shortcut("v", Gdk.ModifierType.META_MASK, self.on_paste)
+
+        # Cmd+C for copy (Ctrl+C on other platforms)
+        self.add_shortcut("c", Gdk.ModifierType.META_MASK, self.on_copy)
+
+        # Cmd+A for select all (Ctrl+A on other platforms)
+        self.add_shortcut("a", Gdk.ModifierType.META_MASK, self.on_select_all)
+
+        # Cmd+Z for undo (Ctrl+Z on other platforms)
+        self.add_shortcut("z", Gdk.ModifierType.META_MASK, self.on_undo)
+
+        # Cmd+Enter for transcribe (Ctrl+Enter on other platforms)
+        self.add_shortcut("Return", Gdk.ModifierType.META_MASK, self.on_transcribe_clicked)
+
+        # Cmd+R for refresh/retry
+        self.add_shortcut("r", Gdk.ModifierType.META_MASK, self.on_transcribe_clicked)
+
+        # Escape to clear URL field
+        self.add_shortcut("Escape", 0, self.on_escape)
+
+        # Cmd+, for preferences (common macOS shortcut)
+        self.add_shortcut("comma", Gdk.ModifierType.META_MASK, self.show_preferences)
+
+    def add_shortcut(self, key, modifier, callback):
+        """Add a keyboard shortcut"""
+        keyval = Gdk.keyval_from_name(key)
+        if keyval != 0:
+            self.accel_group.connect(keyval, modifier, 0, callback)
+
+    def on_paste(self, accel_group, acceleratable, keyval, modifier):
+        """Handle paste shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, paste into them
+                focused.paste_clipboard()
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, paste into them
+                focused.paste_clipboard()
+        return True
+
+    def on_copy(self, accel_group, acceleratable, keyval, modifier):
+        """Handle copy shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, copy from them
+                focused.copy_clipboard()
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, copy from them
+                focused.copy_clipboard()
+        return True
+
+    def on_select_all(self, accel_group, acceleratable, keyval, modifier):
+        """Handle select all shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, select all text
+                focused.select_region(0, -1)
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, select all text
+                buffer = focused.get_buffer()
+                start = buffer.get_start_iter()
+                end = buffer.get_end_iter()
+                buffer.select_range(start, end)
+        return True
+
+    def on_undo(self, accel_group, acceleratable, keyval, modifier):
+        """Handle undo shortcut"""
+        # Get the currently focused widget
+        focused = self.window.get_focus()
+        if focused:
+            # Handle different widget types
+            if isinstance(focused, Gtk.Entry):
+                # For Entry widgets, try to undo
+                if hasattr(focused, 'get_buffer'):
+                    buffer = focused.get_buffer()
+                    if hasattr(buffer, 'undo'):
+                        buffer.undo()
+            elif isinstance(focused, Gtk.TextView):
+                # For TextView widgets, try to undo
+                buffer = focused.get_buffer()
+                if hasattr(buffer, 'undo'):
+                    buffer.undo()
+        return True
+
+    def on_escape(self, accel_group, acceleratable, keyval, modifier):
+        """Handle escape key"""
+        # Clear the URL entry field
+        self.url_entry.set_text("")
+        self.url_entry.grab_focus()
+        return True
+
+    def show_preferences(self, accel_group, acceleratable, keyval, modifier):
+        """Handle Cmd+, shortcut to show preferences"""
+        self.show_settings_dialog()
+        return True
 
     def create_input_section(self):
         """Create the input section with URL field and controls"""
@@ -75,6 +191,9 @@ class TranscribeYTGUI:
         self.url_entry.set_placeholder_text("https://youtube.com/watch?v=...")
         self.url_entry.connect("activate", self.on_transcribe_clicked)
 
+        # Enable proper keyboard shortcuts for the URL entry
+        self.url_entry.set_can_focus(True)
+
         url_box.pack_start(url_label, False, False, 0)
         url_box.pack_start(self.url_entry, True, True, 0)
         input_box.pack_start(url_box, False, False, 0)
@@ -89,9 +208,10 @@ class TranscribeYTGUI:
         model_label.set_halign(Gtk.Align.START)
 
         self.model_combo = Gtk.ComboBoxText()
+        self.model_combo.append_text("Extractive (Detailed)")
         self.model_combo.append_text("DeepSeek API")
         self.model_combo.append_text("Ollama (Local)")
-        self.model_combo.set_active(0)
+        self.model_combo.set_active(0)  # Set Extractive as default
 
         model_box.pack_start(model_label, False, False, 0)
         model_box.pack_start(self.model_combo, False, False, 0)
@@ -315,13 +435,20 @@ class TranscribeYTGUI:
         self.summary_textview.set_editable(False)
         self.summary_textview.set_wrap_mode(Gtk.WrapMode.WORD)
         self.summary_textview.set_margin_left(10)
+
+        # Enable clipboard operations for the summary textview
+        self.summary_textview.set_can_focus(True)
         self.summary_textview.set_margin_right(10)
         self.summary_textview.set_margin_top(10)
         self.summary_textview.set_margin_bottom(10)
 
-        # Set up font
-        font_desc = Pango.FontDescription("sans-serif 12")
+        # Set up font with better readability
+        font_desc = Pango.FontDescription("sans-serif 13")
         self.summary_textview.modify_font(font_desc)
+
+        # Set line spacing for better readability
+        self.summary_textview.set_pixels_above_lines(2)
+        self.summary_textview.set_pixels_below_lines(2)
 
         # Set up text tags for rich formatting
         self.setup_text_tags()
@@ -337,7 +464,7 @@ class TranscribeYTGUI:
         self.set_initial_content()
 
     def setup_text_tags(self):
-        """Set up text tags for rich formatting"""
+        """Set up text tags for rich formatting with improved spacing"""
         buffer = self.summary_textview.get_buffer()
 
         # Bold tag
@@ -346,27 +473,30 @@ class TranscribeYTGUI:
         # Italic tag
         buffer.create_tag("italic", style=Pango.Style.ITALIC)
 
-        # Code tag
+        # Code tag with better styling
         buffer.create_tag("code",
                          family="monospace",
-                         background="#f4f4f4",
-                         foreground="#333333")
+                         background="#f8f9fa",
+                         foreground="#2c3e50",
+                         weight=Pango.Weight.NORMAL)
 
-        # Large tag for H1
+        # Large tag for H1 with better spacing
         buffer.create_tag("large",
                         weight=Pango.Weight.BOLD,
-                        scale=1.3)
+                        scale=1.4,
+                        foreground="#1a1a1a")
 
-        # Medium tag for H2
+        # Medium tag for H2 with better spacing
         buffer.create_tag("medium",
-                         weight=Pango.Weight.BOLD,
-                         scale=1.1)
-
-        # Header tag
-        buffer.create_tag("header",
                          weight=Pango.Weight.BOLD,
                          scale=1.2,
                          foreground="#2c3e50")
+
+        # Header tag for H3+ with better spacing
+        buffer.create_tag("header",
+                         weight=Pango.Weight.BOLD,
+                         scale=1.1,
+                         foreground="#34495e")
 
     def set_initial_content(self):
         """Set initial content for the summary view"""
@@ -500,15 +630,7 @@ Features:
             if chunk_size == 0:
                 chunk_size = None  # No chunking for full text
 
-            if model_index == 0:  # DeepSeek
-                api_key = self.config.get("deepseek_api_key")
-                if not api_key:
-                    GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
-                    return
-                md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
-            else:  # Ollama
-                ollama_model = self.config.get("ollama_model", "vicuna:7b")
-                md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size)
+            md_path = self._generate_summary_by_model(model_index, txt_path, chunk_size)
 
             # Step 4: Load and display summary
             GLib.idle_add(self.update_progress, 0.9, "Loading summary...")
@@ -555,6 +677,29 @@ Features:
         self.status_label.set_text(text)
         return False
 
+    def _get_ollama_formatting_config(self):
+        """Get Ollama formatting configuration from config"""
+        return (
+            self.config.get("use_ollama_formatting", True),
+            self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
+        )
+
+    def _generate_summary_by_model(self, model_index: int, txt_path: str, chunk_size: int) -> str:
+        """Generate summary using the selected model"""
+        use_ollama_formatting, ollama_formatting_model = self._get_ollama_formatting_config()
+
+        if model_index == 0:  # Extractive
+            return generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
+        elif model_index == 1:  # DeepSeek
+            api_key = self.config.get("deepseek_api_key")
+            if not api_key:
+                GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
+                return None
+            return generate_summary_deepseek(txt_path, api_key, chunk_size)
+        else:  # Ollama
+            ollama_model = self.config.get("ollama_model", "vicuna:7b")
+            return generate_summary_ollama(txt_path, ollama_model, chunk_size)
+
 
     def display_summary(self, html_content, file_path):
         """Display the summary in the TextView with HTML rendering"""
@@ -582,7 +727,7 @@ Features:
             buffer.set_text(text)
 
     def render_soup_element(self, buffer, element):
-        """Recursively render BeautifulSoup elements with formatting"""
+        """Recursively render BeautifulSoup elements with formatting and improved spacing"""
         if hasattr(element, 'name') and element.name is not None:
             # This is a tag
             if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
@@ -601,6 +746,12 @@ Features:
                 self.render_list_item(buffer, element)
             elif element.name == 'br':
                 buffer.insert(buffer.get_end_iter(), '\n')
+            elif element.name == 'div':
+                # Handle div elements with proper spacing
+                self.render_div(buffer, element)
+            elif element.name == 'blockquote':
+                # Handle blockquotes with proper formatting
+                self.render_blockquote(buffer, element)
             else:
                 # For other tags, just render their content
                 for child in element.children:
@@ -612,16 +763,17 @@ Features:
                 buffer.insert(buffer.get_end_iter(), text)
 
     def render_header(self, buffer, element):
-        """Render a header element with appropriate formatting"""
+        """Render a header element with appropriate formatting and spacing"""
         text = element.get_text().strip()
         if text:
+            # Add extra spacing before and after headers for better readability
             start_iter = buffer.get_end_iter()
-            buffer.insert(start_iter, text + '\n')
+            buffer.insert(start_iter, '\n' + text + '\n\n')
 
             # Apply formatting
             end_iter = buffer.get_end_iter()
             start_iter = end_iter.copy()
-            start_iter.backward_chars(len(text) + 1)
+            start_iter.backward_chars(len(text) + 3)  # Account for the newlines we added
 
             if element.name == 'h1':
                 buffer.apply_tag_by_name("large", start_iter, end_iter)
@@ -670,22 +822,47 @@ Features:
             buffer.apply_tag_by_name("code", start_iter, end_iter)
 
     def render_paragraph(self, buffer, element):
-        """Render a paragraph"""
+        """Render a paragraph with proper spacing"""
         text = element.get_text().strip()
         if text:
+            # Add extra spacing for better readability
             buffer.insert(buffer.get_end_iter(), text + '\n\n')
 
     def render_list(self, buffer, element):
-        """Render a list"""
+        """Render a list with proper spacing"""
+        # Add spacing before list
+        buffer.insert(buffer.get_end_iter(), '\n')
         for child in element.children:
             if hasattr(child, 'name') and child.name == 'li':
                 self.render_list_item(buffer, child)
+        # Add spacing after list
+        buffer.insert(buffer.get_end_iter(), '\n')
 
     def render_list_item(self, buffer, element):
-        """Render a list item"""
+        """Render a list item with proper spacing"""
         text = element.get_text().strip()
         if text:
             buffer.insert(buffer.get_end_iter(), '• ' + text + '\n')
+
+    def render_div(self, buffer, element):
+        """Render a div element with proper spacing"""
+        # Add spacing before div content
+        buffer.insert(buffer.get_end_iter(), '\n')
+        for child in element.children:
+            self.render_soup_element(buffer, child)
+        # Add spacing after div content
+        buffer.insert(buffer.get_end_iter(), '\n')
+
+    def render_blockquote(self, buffer, element):
+        """Render a blockquote with proper formatting"""
+        text = element.get_text().strip()
+        if text:
+            # Add spacing and indentation for blockquotes
+            lines = text.split('\n')
+            for line in lines:
+                if line.strip():
+                    buffer.insert(buffer.get_end_iter(), '> ' + line.strip() + '\n')
+            buffer.insert(buffer.get_end_iter(), '\n')
 
     def html_to_formatted_text(self, html_content):
         """Convert HTML to formatted text for display in TextView"""
@@ -815,6 +992,7 @@ Features:
             api_key_entry.set_text(self.config["deepseek_api_key"])
         content_area.pack_start(api_key_entry, True, True, 0)
 
+
         # Ollama model entry
         ollama_label = Gtk.Label("Ollama Model:")
         ollama_label.set_halign(Gtk.Align.START)
@@ -824,6 +1002,21 @@ Features:
         ollama_entry.set_placeholder_text("e.g., vicuna:7b")
         ollama_entry.set_text(self.config.get("ollama_model", "vicuna:7b"))
         content_area.pack_start(ollama_entry, True, True, 0)
+
+        # Ollama formatting model entry
+        ollama_formatting_label = Gtk.Label("Ollama Formatting Model:")
+        ollama_formatting_label.set_halign(Gtk.Align.START)
+        content_area.pack_start(ollama_formatting_label, False, False, 0)
+
+        ollama_formatting_entry = Gtk.Entry()
+        ollama_formatting_entry.set_placeholder_text("e.g., nous-hermes2-mixtral:latest")
+        ollama_formatting_entry.set_text(self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest"))
+        content_area.pack_start(ollama_formatting_entry, True, True, 0)
+
+        # Use Ollama formatting checkbox
+        use_ollama_formatting_check = Gtk.CheckButton(label="Use Ollama formatting for NLP summaries")
+        use_ollama_formatting_check.set_active(self.config.get("use_ollama_formatting", True))
+        content_area.pack_start(use_ollama_formatting_check, False, False, 0)
 
         # Summary chunk size entry
         chunk_label = Gtk.Label("Summary Chunk Size (words):")
@@ -844,6 +1037,8 @@ Features:
             # Save configuration
             self.config["deepseek_api_key"] = api_key_entry.get_text()
             self.config["ollama_model"] = ollama_entry.get_text()
+            self.config["ollama_formatting_model"] = ollama_formatting_entry.get_text()
+            self.config["use_ollama_formatting"] = use_ollama_formatting_check.get_active()
 
             # Handle chunk size
             chunk_text = chunk_entry.get_text().strip()

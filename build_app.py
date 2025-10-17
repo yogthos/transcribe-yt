@@ -330,7 +330,7 @@ except Exception as e:
 
     # Create a virtual environment in the app bundle
     print("Creating virtual environment in app bundle...")
-    venv_path = f"{resources_path}/venv"
+    venv_path = os.path.join(resources_path, "venv")
 
     try:
         subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
@@ -341,8 +341,8 @@ except Exception as e:
 
     # Install dependencies in the virtual environment
     print("Installing dependencies...")
-    pip_path = f"{venv_path}/bin/pip"
-    requirements_path = f"{resources_path}/requirements.txt"
+    pip_path = os.path.join(venv_path, "bin", "pip")
+    requirements_path = os.path.join(resources_path, "requirements.txt")
 
     # Set environment for pip to find GTK-related packages
     env = os.environ.copy()
@@ -362,6 +362,14 @@ except Exception as e:
     if not copy_gtk_dependencies(resources_path):
         print("Failed to copy GTK dependencies")
         return False
+
+    # Skip spaCy model download during build due to PyTorch circular import issues
+    print("Skipping spaCy English model download during build...")
+    print("The model will be downloaded automatically on first use of extractive summarization.")
+
+    # Skip Hugging Face model download during build due to potential torch import issues
+    print("Skipping Hugging Face model download during build...")
+    print("The model will be downloaded automatically on first use of the application.")
 
     print(f"\n✅ {app_name}.app bundle created successfully!")
     print(f"Location: {os.path.abspath(app_bundle_path)}")
