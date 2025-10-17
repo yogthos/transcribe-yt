@@ -321,9 +321,13 @@ class TranscribeYTGUI:
         self.summary_textview.set_margin_top(10)
         self.summary_textview.set_margin_bottom(10)
 
-        # Set up font
-        font_desc = Pango.FontDescription("sans-serif 12")
+        # Set up font with better readability
+        font_desc = Pango.FontDescription("sans-serif 13")
         self.summary_textview.modify_font(font_desc)
+
+        # Set line spacing for better readability
+        self.summary_textview.set_pixels_above_lines(2)
+        self.summary_textview.set_pixels_below_lines(2)
 
         # Set up text tags for rich formatting
         self.setup_text_tags()
@@ -339,7 +343,7 @@ class TranscribeYTGUI:
         self.set_initial_content()
 
     def setup_text_tags(self):
-        """Set up text tags for rich formatting"""
+        """Set up text tags for rich formatting with improved spacing"""
         buffer = self.summary_textview.get_buffer()
 
         # Bold tag
@@ -348,27 +352,30 @@ class TranscribeYTGUI:
         # Italic tag
         buffer.create_tag("italic", style=Pango.Style.ITALIC)
 
-        # Code tag
+        # Code tag with better styling
         buffer.create_tag("code",
                          family="monospace",
-                         background="#f4f4f4",
-                         foreground="#333333")
+                         background="#f8f9fa",
+                         foreground="#2c3e50",
+                         weight=Pango.Weight.NORMAL)
 
-        # Large tag for H1
+        # Large tag for H1 with better spacing
         buffer.create_tag("large",
                         weight=Pango.Weight.BOLD,
-                        scale=1.3)
+                        scale=1.4,
+                        foreground="#1a1a1a")
 
-        # Medium tag for H2
+        # Medium tag for H2 with better spacing
         buffer.create_tag("medium",
-                         weight=Pango.Weight.BOLD,
-                         scale=1.1)
-
-        # Header tag
-        buffer.create_tag("header",
                          weight=Pango.Weight.BOLD,
                          scale=1.2,
                          foreground="#2c3e50")
+
+        # Header tag for H3+ with better spacing
+        buffer.create_tag("header",
+                         weight=Pango.Weight.BOLD,
+                         scale=1.1,
+                         foreground="#34495e")
 
     def set_initial_content(self):
         """Set initial content for the summary view"""
@@ -502,24 +509,7 @@ Features:
             if chunk_size == 0:
                 chunk_size = None  # No chunking for full text
 
-            if model_index == 0:  # Extractive
-                use_ollama_formatting = self.config.get("use_ollama_formatting", True)
-                ollama_formatting_model = self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
-                md_path = generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
-            elif model_index == 1:  # NLP/Hugging Face
-                huggingface_model = self.config.get("huggingface_model", "facebook/bart-large-cnn")
-                use_ollama_formatting = self.config.get("use_ollama_formatting", True)
-                ollama_formatting_model = self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
-                md_path = generate_summary_huggingface(txt_path, huggingface_model, chunk_size, use_ollama_formatting, ollama_formatting_model)
-            elif model_index == 2:  # DeepSeek
-                api_key = self.config.get("deepseek_api_key")
-                if not api_key:
-                    GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
-                    return
-                md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
-            else:  # Ollama
-                ollama_model = self.config.get("ollama_model", "vicuna:7b")
-                md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size)
+            md_path = self._generate_summary_by_model(model_index, txt_path, chunk_size)
 
             # Step 4: Load and display summary
             GLib.idle_add(self.update_progress, 0.9, "Loading summary...")
@@ -566,6 +556,32 @@ Features:
         self.status_label.set_text(text)
         return False
 
+    def _get_ollama_formatting_config(self):
+        """Get Ollama formatting configuration from config"""
+        return (
+            self.config.get("use_ollama_formatting", True),
+            self.config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
+        )
+
+    def _generate_summary_by_model(self, model_index: int, txt_path: str, chunk_size: int) -> str:
+        """Generate summary using the selected model"""
+        use_ollama_formatting, ollama_formatting_model = self._get_ollama_formatting_config()
+
+        if model_index == 0:  # Extractive
+            return generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
+        elif model_index == 1:  # NLP/Hugging Face
+            huggingface_model = self.config.get("huggingface_model", "facebook/bart-large-cnn")
+            return generate_summary_huggingface(txt_path, huggingface_model, chunk_size, use_ollama_formatting, ollama_formatting_model)
+        elif model_index == 2:  # DeepSeek
+            api_key = self.config.get("deepseek_api_key")
+            if not api_key:
+                GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
+                return None
+            return generate_summary_deepseek(txt_path, api_key, chunk_size)
+        else:  # Ollama
+            ollama_model = self.config.get("ollama_model", "vicuna:7b")
+            return generate_summary_ollama(txt_path, ollama_model, chunk_size)
+
 
     def display_summary(self, html_content, file_path):
         """Display the summary in the TextView with HTML rendering"""
@@ -593,7 +609,7 @@ Features:
             buffer.set_text(text)
 
     def render_soup_element(self, buffer, element):
-        """Recursively render BeautifulSoup elements with formatting"""
+        """Recursively render BeautifulSoup elements with formatting and improved spacing"""
         if hasattr(element, 'name') and element.name is not None:
             # This is a tag
             if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
@@ -612,6 +628,12 @@ Features:
                 self.render_list_item(buffer, element)
             elif element.name == 'br':
                 buffer.insert(buffer.get_end_iter(), '\n')
+            elif element.name == 'div':
+                # Handle div elements with proper spacing
+                self.render_div(buffer, element)
+            elif element.name == 'blockquote':
+                # Handle blockquotes with proper formatting
+                self.render_blockquote(buffer, element)
             else:
                 # For other tags, just render their content
                 for child in element.children:
@@ -623,16 +645,17 @@ Features:
                 buffer.insert(buffer.get_end_iter(), text)
 
     def render_header(self, buffer, element):
-        """Render a header element with appropriate formatting"""
+        """Render a header element with appropriate formatting and spacing"""
         text = element.get_text().strip()
         if text:
+            # Add extra spacing before and after headers for better readability
             start_iter = buffer.get_end_iter()
-            buffer.insert(start_iter, text + '\n')
+            buffer.insert(start_iter, '\n' + text + '\n\n')
 
             # Apply formatting
             end_iter = buffer.get_end_iter()
             start_iter = end_iter.copy()
-            start_iter.backward_chars(len(text))  # Only go back the length of the text, not including newline
+            start_iter.backward_chars(len(text) + 3)  # Account for the newlines we added
 
             if element.name == 'h1':
                 buffer.apply_tag_by_name("large", start_iter, end_iter)
@@ -681,22 +704,47 @@ Features:
             buffer.apply_tag_by_name("code", start_iter, end_iter)
 
     def render_paragraph(self, buffer, element):
-        """Render a paragraph"""
+        """Render a paragraph with proper spacing"""
         text = element.get_text().strip()
         if text:
+            # Add extra spacing for better readability
             buffer.insert(buffer.get_end_iter(), text + '\n\n')
 
     def render_list(self, buffer, element):
-        """Render a list"""
+        """Render a list with proper spacing"""
+        # Add spacing before list
+        buffer.insert(buffer.get_end_iter(), '\n')
         for child in element.children:
             if hasattr(child, 'name') and child.name == 'li':
                 self.render_list_item(buffer, child)
+        # Add spacing after list
+        buffer.insert(buffer.get_end_iter(), '\n')
 
     def render_list_item(self, buffer, element):
-        """Render a list item"""
+        """Render a list item with proper spacing"""
         text = element.get_text().strip()
         if text:
             buffer.insert(buffer.get_end_iter(), '• ' + text + '\n')
+
+    def render_div(self, buffer, element):
+        """Render a div element with proper spacing"""
+        # Add spacing before div content
+        buffer.insert(buffer.get_end_iter(), '\n')
+        for child in element.children:
+            self.render_soup_element(buffer, child)
+        # Add spacing after div content
+        buffer.insert(buffer.get_end_iter(), '\n')
+
+    def render_blockquote(self, buffer, element):
+        """Render a blockquote with proper formatting"""
+        text = element.get_text().strip()
+        if text:
+            # Add spacing and indentation for blockquotes
+            lines = text.split('\n')
+            for line in lines:
+                if line.strip():
+                    buffer.insert(buffer.get_end_iter(), '> ' + line.strip() + '\n')
+            buffer.insert(buffer.get_end_iter(), '\n')
 
     def html_to_formatted_text(self, html_content):
         """Convert HTML to formatted text for display in TextView"""

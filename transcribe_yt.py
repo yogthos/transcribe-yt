@@ -766,7 +766,7 @@ Summary:"""
     return str(md_path)
 
 
-def format_summary_with_ollama(summary_text: str, ollama_model: str = "nous-hermes2-mixtral:latest") -> str:
+def apply_ollama_formatting(summary_text: str, ollama_model: str = "nous-hermes2-mixtral:latest") -> str:
     """
     Format a summary using Ollama to improve readability while preserving all content
 
@@ -834,6 +834,50 @@ Reformatted summary with headings and paragraph breaks:"""
         print(f"⚠️ Ollama formatting failed: {e}")
         print("Using original summary without formatting")
         return summary_text
+
+
+def apply_ollama_formatting_if_enabled(summary_text: str, use_ollama_formatting: bool, ollama_formatting_model: str) -> str:
+    """
+    Apply Ollama formatting if enabled, otherwise return original text
+
+    Args:
+        summary_text: The summary text to potentially format
+        use_ollama_formatting: Whether to apply Ollama formatting
+        ollama_formatting_model: Ollama model to use for formatting
+
+    Returns:
+        Formatted summary text if enabled, otherwise original text
+    """
+    if use_ollama_formatting:
+        print("Applying Ollama formatting for improved readability...")
+        try:
+            formatted_summary = apply_ollama_formatting(summary_text, ollama_formatting_model)
+            print("✓ Ollama formatting applied successfully")
+            return formatted_summary
+        except Exception as e:
+            print(f"⚠️ Ollama formatting failed: {e}")
+            print("Using original summary without formatting")
+            return summary_text
+    else:
+        return summary_text
+
+
+def save_summary_to_file(summary_text: str, transcription_path: Path) -> str:
+    """
+    Save summary text to markdown file
+
+    Args:
+        summary_text: The summary text to save
+        transcription_path: Path to the original transcription file
+
+    Returns:
+        Path to the saved markdown file
+    """
+    md_path = transcription_path.with_suffix(".md")
+    with open(md_path, 'w', encoding='utf-8') as f:
+        f.write(summary_text)
+    print(f"Summary saved to: {md_path}")
+    return str(md_path)
 
 
 def generate_summary_huggingface(transcription_path: str, model: str = "facebook/bart-large-cnn", chunk_size: int = None, use_ollama_formatting: bool = True, ollama_formatting_model: str = "nous-hermes2-mixtral:latest") -> str:
@@ -912,20 +956,9 @@ def generate_summary_huggingface(transcription_path: str, model: str = "facebook
             final_summary = summary_result[0]['summary_text']
 
         # Apply Ollama formatting for improved readability if requested
-        if use_ollama_formatting:
-            print("Applying Ollama formatting for improved readability...")
-            try:
-                final_summary = format_summary_with_ollama(final_summary, ollama_formatting_model)
-                print("✓ Ollama formatting applied successfully")
-            except Exception as e:
-                print(f"⚠️ Ollama formatting failed: {e}")
-                print("Using original summary without formatting")
+        final_summary = apply_ollama_formatting_if_enabled(final_summary, use_ollama_formatting, ollama_formatting_model)
 
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(final_summary)
-
-        print(f"Summary saved to: {md_path}")
-        return str(md_path)
+        return save_summary_to_file(final_summary, transcription_path)
 
     except ImportError:
         raise RuntimeError("transformers library not installed. Please install with: pip install transformers torch")
@@ -1039,20 +1072,9 @@ def generate_summary_extractive(transcription_path: str, chunk_size: int = None,
             final_summary = "# Detailed Summary\n\n" + " ".join(selected_sentences)
 
         # Apply Ollama formatting for improved readability if requested
-        if use_ollama_formatting:
-            print("Applying Ollama formatting for improved readability...")
-            try:
-                final_summary = format_summary_with_ollama(final_summary, ollama_formatting_model)
-                print("✓ Ollama formatting applied successfully")
-            except Exception as e:
-                print(f"⚠️ Ollama formatting failed: {e}")
-                print("Using original summary without formatting")
+        final_summary = apply_ollama_formatting_if_enabled(final_summary, use_ollama_formatting, ollama_formatting_model)
 
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(final_summary)
-
-        print(f"Summary saved to: {md_path}")
-        return str(md_path)
+        return save_summary_to_file(final_summary, transcription_path)
 
     except Exception as e:
         raise RuntimeError(f"Failed to generate extractive summary: {e}")
