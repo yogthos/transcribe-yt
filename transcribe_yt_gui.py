@@ -14,13 +14,14 @@ import markdown
 import re
 from pathlib import Path
 
-# Import the transcription logic from the main module
-from transcribe_yt import (
-    download_subtitles, download_audio, convert_srt_to_text,
-    transcribe_audio, generate_summary_deepseek, generate_summary_ollama, generate_summary_extractive,
-    load_config, save_config, check_dependencies,
-    save_link_to_history, load_link_history, remove_link_from_history
-)
+# Import from the new modular structure
+from config import load_config, save_config, save_link_to_history, load_link_history, remove_link_from_history
+from download import download_subtitles, download_audio, convert_srt_to_text
+from transcription import transcribe_audio
+from summarization import generate_summary_deepseek, generate_summary_ollama, generate_summary_extractive
+
+# Import check_dependencies from the main module
+from transcribe_yt import check_dependencies
 
 
 class TranscribeYTGUI:
