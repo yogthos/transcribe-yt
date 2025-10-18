@@ -144,24 +144,23 @@ def main():
             txt_path = transcribe_audio(mp3_path, args.chunk_duration, args.overlap_duration)
 
         # Step 3: Generate summary
+        config = load_config()
+        llm_prompt = config.get("llm_prompt")
+        llm_model = config.get("llm_model")
+        chunk_size = args.summary_chunk_size
+
         if args.model == "deepseek":
-            config = load_config()
             api_key = config.get("deepseek_api_key")
             if not api_key:
                 raise ValueError("DeepSeek API key not set. Use --set-api-key to configure it.")
-            chunk_size = args.summary_chunk_size
-            md_path = generate_summary_deepseek(txt_path, api_key, chunk_size)
+            md_path = generate_summary_deepseek(txt_path, api_key, chunk_size, llm_prompt, llm_model)
         elif args.model == "extractive":
-            config = load_config()
             use_ollama_formatting = config.get("use_ollama_formatting", True)
             ollama_formatting_model = config.get("ollama_formatting_model", "nous-hermes2-mixtral:latest")
-            chunk_size = args.summary_chunk_size
             md_path = generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
         else:
-            config = load_config()
             ollama_model = config.get("ollama_model", args.ollama_model)
-            chunk_size = args.summary_chunk_size
-            md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size)
+            md_path = generate_summary_ollama(txt_path, ollama_model, chunk_size, llm_prompt)
 
         # Step 4: Clean up intermediate files
         print("\nCleaning up intermediate files...")

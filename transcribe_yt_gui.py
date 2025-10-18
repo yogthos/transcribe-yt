@@ -689,6 +689,10 @@ Features:
         """Generate summary using the selected model"""
         use_ollama_formatting, ollama_formatting_model = self._get_ollama_formatting_config()
 
+        # Get LLM prompt and model from config
+        llm_prompt = self.config.get("llm_prompt")
+        llm_model = self.config.get("llm_model")
+
         if model_index == 0:  # Extractive
             return generate_summary_extractive(txt_path, chunk_size, use_ollama_formatting, ollama_formatting_model)
         elif model_index == 1:  # DeepSeek
@@ -696,10 +700,10 @@ Features:
             if not api_key:
                 GLib.idle_add(self.show_error, "DeepSeek API key not set. Please configure it first.")
                 return None
-            return generate_summary_deepseek(txt_path, api_key, chunk_size)
+            return generate_summary_deepseek(txt_path, api_key, chunk_size, llm_prompt, llm_model)
         else:  # Ollama
             ollama_model = self.config.get("ollama_model", "vicuna:7b")
-            return generate_summary_ollama(txt_path, ollama_model, chunk_size)
+            return generate_summary_ollama(txt_path, ollama_model, chunk_size, llm_prompt)
 
 
     def display_summary(self, html_content, file_path):
@@ -1031,6 +1035,39 @@ Features:
             chunk_entry.set_text(str(chunk_size))
         content_area.pack_start(chunk_entry, True, True, 0)
 
+        # LLM Model entry
+        llm_model_label = Gtk.Label("LLM Model:")
+        llm_model_label.set_halign(Gtk.Align.START)
+        content_area.pack_start(llm_model_label, False, False, 0)
+
+        llm_model_entry = Gtk.Entry()
+        llm_model_entry.set_placeholder_text("e.g., deepseek-chat, llama3.1:8b")
+        llm_model_entry.set_text(self.config.get("llm_model", "deepseek-chat"))
+        content_area.pack_start(llm_model_entry, True, True, 0)
+
+        # LLM Prompt entry
+        llm_prompt_label = Gtk.Label("LLM Prompt:")
+        llm_prompt_label.set_halign(Gtk.Align.START)
+        content_area.pack_start(llm_prompt_label, False, False, 0)
+
+        # Create a scrolled window for the prompt text area
+        prompt_scrolled = Gtk.ScrolledWindow()
+        prompt_scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        prompt_scrolled.set_size_request(-1, 100)  # Set height to 100px
+        content_area.pack_start(prompt_scrolled, True, True, 0)
+
+        llm_prompt_textview = Gtk.TextView()
+        llm_prompt_textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        llm_prompt_textview.set_editable(True)
+        llm_prompt_textview.set_can_focus(True)
+
+        # Set the prompt text
+        prompt_buffer = llm_prompt_textview.get_buffer()
+        prompt_text = self.config.get("llm_prompt", "Please provide a comprehensive summary of the following transcribed content.\nFocus on the main points, key insights, and important details. Make sure not to omit details:\n\n{content}\n\nSummary:")
+        prompt_buffer.set_text(prompt_text)
+
+        prompt_scrolled.add(llm_prompt_textview)
+
         dialog.show_all()
 
         response = dialog.run()
@@ -1040,6 +1077,13 @@ Features:
             self.config["ollama_model"] = ollama_entry.get_text()
             self.config["ollama_formatting_model"] = ollama_formatting_entry.get_text()
             self.config["use_ollama_formatting"] = use_ollama_formatting_check.get_active()
+            self.config["llm_model"] = llm_model_entry.get_text()
+
+            # Get LLM prompt from textview
+            prompt_buffer = llm_prompt_textview.get_buffer()
+            start_iter = prompt_buffer.get_start_iter()
+            end_iter = prompt_buffer.get_end_iter()
+            self.config["llm_prompt"] = prompt_buffer.get_text(start_iter, end_iter, False)
 
             # Handle chunk size
             chunk_text = chunk_entry.get_text().strip()

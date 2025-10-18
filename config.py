@@ -25,6 +25,8 @@ def load_config():
         "chunk_duration": 300,
         "overlap_duration": 30,
         "summary_chunk_size": None,  # None means no chunking, 0 means full text
+        "llm_prompt": "Please provide a comprehensive and detailed summary of the following transcribed content.\nFocus on the main points, key insights, and important details. Make sure not to omit details:\n\n{content}\n\nSummary:",
+        "llm_model": "deepseek-chat",
         "link_history": []
     }
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from transcription import chunk_text
 
 
-def generate_summary_deepseek(transcription_path: str, api_key: str, chunk_size: int = None) -> str:
+def generate_summary_deepseek(transcription_path: str, api_key: str, chunk_size: int = None, llm_prompt: str = None, llm_model: str = None) -> str:
     """
     Generate summary using DeepSeek API with optional chunking
 
@@ -16,6 +16,8 @@ def generate_summary_deepseek(transcription_path: str, api_key: str, chunk_size:
         transcription_path: Path to the transcription text file
         api_key: DeepSeek API key
         chunk_size: Number of words per chunk (None for no chunking)
+        llm_prompt: Custom prompt template (uses {content} placeholder)
+        llm_model: Model name to use (default: deepseek-chat)
 
     Returns:
         Path to the summary markdown file
@@ -42,6 +44,12 @@ def generate_summary_deepseek(transcription_path: str, api_key: str, chunk_size:
     print("Generating summary using DeepSeek API...")
     print(f"Transcript length: {len(transcription):,} characters (~{estimated_tokens:,} tokens)")
 
+    # Set default values
+    if llm_prompt is None:
+        llm_prompt = "Please provide a comprehensive summary of the following transcribed content.\nFocus on the main points, key insights, and important details. Make sure not to omit details:\n\n{content}\n\nSummary:"
+    if llm_model is None:
+        llm_model = "deepseek-chat"
+
     # If chunk_size is specified, process in chunks
     if chunk_size and chunk_size > 0:
         print(f"Processing transcript in chunks of {chunk_size} words...")
@@ -53,15 +61,10 @@ def generate_summary_deepseek(transcription_path: str, api_key: str, chunk_size:
         for i, chunk in enumerate(chunks, 1):
             print(f"Processing chunk {i}/{len(chunks)} ({len(chunk.split())} words)...")
 
-            prompt = f"""Please provide a comprehensive summary of the following transcribed content.
-Focus on the main points, key insights, and important details. Make sure not to omit details:
-
-{chunk}
-
-Summary:"""
+            prompt = llm_prompt.format(content=chunk)
 
             data = {
-                "model": "deepseek-chat",
+                "model": llm_model,
                 "messages": [
                     {
                         "role": "user",
@@ -92,15 +95,10 @@ Summary:"""
 
     else:
         # Process entire transcript at once
-        prompt = f"""Please provide a comprehensive summary of the following transcribed content.
-Focus on the main points, key insights, and important details. Make sure not to omit details:
-
-{transcription}
-
-Summary:"""
+        prompt = llm_prompt.format(content=transcription)
 
         data = {
-            "model": "deepseek-chat",
+            "model": llm_model,
             "messages": [
                 {
                     "role": "user",
@@ -131,7 +129,7 @@ Summary:"""
     return str(md_path)
 
 
-def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", chunk_size: int = None) -> str:
+def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", chunk_size: int = None, llm_prompt: str = None) -> str:
     """
     Generate summary using local Ollama model with optional chunking
 
@@ -139,6 +137,7 @@ def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", c
         transcription_path: Path to the transcription text file
         model: Ollama model name
         chunk_size: Number of words per chunk (None for no chunking)
+        llm_prompt: Custom prompt template (uses {content} placeholder)
 
     Returns:
         Path to the summary markdown file
@@ -157,6 +156,10 @@ def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", c
     if estimated_tokens > 100000:
         print(f"Warning: Transcript is very long (~{estimated_tokens:,} tokens). Consider using a model with larger context window.")
 
+    # Set default prompt if not provided
+    if llm_prompt is None:
+        llm_prompt = "Please provide a comprehensive summary of the following transcribed content.\nFocus on the main points, key insights, and important details:\n\n{content}\n\nSummary:"
+
     print(f"Generating summary using Ollama model: {model}...")
     print(f"Transcript length: {len(transcription):,} characters (~{estimated_tokens:,} tokens)")
 
@@ -171,12 +174,7 @@ def generate_summary_ollama(transcription_path: str, model: str = "vicuna:7b", c
         for i, chunk in enumerate(chunks, 1):
             print(f"Processing chunk {i}/{len(chunks)} ({len(chunk.split())} words)...")
 
-            prompt = f"""Please provide a comprehensive summary of the following transcribed content.
-Focus on the main points, key insights, and important details:
-
-{chunk}
-
-Summary:"""
+            prompt = llm_prompt.format(content=chunk)
 
             data = {
                 "model": model,
@@ -213,12 +211,7 @@ Summary:"""
 
     else:
         # Process entire transcript at once
-        prompt = f"""Please provide a comprehensive summary of the following transcribed content.
-Focus on the main points, key insights, and important details:
-
-{transcription}
-
-Summary:"""
+        prompt = llm_prompt.format(content=transcription)
 
         data = {
             "model": model,
