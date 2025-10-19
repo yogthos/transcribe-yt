@@ -213,6 +213,7 @@ class TranscribeYTGUI:
         self.model_combo.append_text("DeepSeek API")
         self.model_combo.append_text("Ollama (Local)")
         self.model_combo.set_active(0)  # Set Extractive as default
+        self.model_combo.connect("changed", self.on_model_changed)
 
         model_box.pack_start(model_label, False, False, 0)
         model_box.pack_start(self.model_combo, False, False, 0)
@@ -539,10 +540,9 @@ Features:
 
     def update_config_ui(self):
         """Update UI elements based on loaded configuration"""
-        # Update model selection if configured
-        if "ollama_model" in self.config:
-            # For now, keep default selection (DeepSeek)
-            pass
+        # Update model selection from config
+        selected_model = self.config.get("selected_model", 0)  # Default to Extractive
+        self.model_combo.set_active(selected_model)
 
         # Update chunk size from config
         chunk_size = self.config.get("summary_chunk_size")
@@ -557,6 +557,12 @@ Features:
             self.chunk_value_label.set_text("Full Text")
         else:
             self.chunk_value_label.set_text(f"{value:,} words")
+
+    def on_model_changed(self, combo):
+        """Handle model selection changes"""
+        selected_index = combo.get_active()
+        self.config["selected_model"] = selected_index
+        save_config(self.config)
 
     def on_transcribe_clicked(self, widget):
         """Handle transcribe button click"""
@@ -1084,6 +1090,9 @@ Features:
             start_iter = prompt_buffer.get_start_iter()
             end_iter = prompt_buffer.get_end_iter()
             self.config["llm_prompt"] = prompt_buffer.get_text(start_iter, end_iter, False)
+
+            # Save current model selection
+            self.config["selected_model"] = self.model_combo.get_active()
 
             # Handle chunk size
             chunk_text = chunk_entry.get_text().strip()

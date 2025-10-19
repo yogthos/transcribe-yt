@@ -27,6 +27,7 @@ def load_config():
         "summary_chunk_size": None,  # None means no chunking, 0 means full text
         "llm_prompt": "Please provide a comprehensive and detailed summary of the following transcribed content.\nFocus on the main points, key insights, and important details. Make sure not to omit details:\n\n{content}\n\nSummary:",
         "llm_model": "deepseek-chat",
+        "selected_model": 0,  # 0=Extractive, 1=DeepSeek, 2=Ollama
         "link_history": []
     }
 
