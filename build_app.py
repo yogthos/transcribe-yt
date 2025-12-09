@@ -253,6 +253,32 @@ import os
 # Add the resources path to Python path
 sys.path.insert(0, '$RESOURCES_PATH')
 
+# The venv Python should already have site-packages in sys.path,
+# but let's verify and add it explicitly if needed
+venv_lib = os.path.join('$VENV_PATH', 'lib')
+if os.path.exists(venv_lib):
+    # Find the python version directory (e.g., python3.13)
+    for item in os.listdir(venv_lib):
+        if item.startswith('python'):
+            python_version_dir = os.path.join(venv_lib, item)
+            site_packages = os.path.join(python_version_dir, 'site-packages')
+            if os.path.exists(site_packages) and site_packages not in sys.path:
+                sys.path.insert(0, site_packages)
+            break
+
+# Verify critical imports work before starting GUI
+try:
+    import nemo
+    import nemo.collections.asr
+except ImportError as e:
+    print(f'ERROR: Failed to import nemo: {{e}}')
+    print(f'This usually means nemo_toolkit is not installed in the virtual environment.')
+    print(f'Virtual environment: $VENV_PATH')
+    print(f'Python executable: $VENV_PYTHON')
+    print(f'Python version: {{sys.version}}')
+    print(f'Site-packages in path: {{[p for p in sys.path if \"site-packages\" in p]}}')
+    sys.exit(1)
+
 try:
     from transcribe_yt_gui import main
     main()
@@ -381,29 +407,189 @@ except Exception as e:
                 # Install dependencies without nemo_toolkit
                 subprocess.run([pip_path, "install", "-r", temp_req_path], check=True, env=env)
 
-                # Try installing nemo_toolkit - it may work even if kaldialign failed
-                # kaldialign is used for alignment but may not be strictly required
-                print("Attempting to install nemo_toolkit (kaldialign may be optional)...")
-                nemo_result = subprocess.run(
-                    [pip_path, "install", "nemo_toolkit[asr]>=1.21.0", "--no-deps"],
-                    check=False, env=env
-                )
-                # Install nemo dependencies (this will try kaldialign again but we'll ignore failure)
+                # Install nemo_toolkit core package first (this ensures it's installed)
+                print("Installing nemo_toolkit core package...")
                 subprocess.run(
-                    [pip_path, "install", "nemo_toolkit[asr]>=1.21.0"],
-                    check=False, env=env
+                    [pip_path, "install", "nemo_toolkit>=1.21.0"],
+                    check=True, env=env
                 )
 
-                # Clean up
+                # Verify nemo_toolkit core is installed
+                verify_result = subprocess.run(
+                    [pip_path, "show", "nemo_toolkit"],
+                    check=False, env=env, capture_output=True, text=True
+                )
+                if verify_result.returncode != 0:
+                    print("ERROR: nemo_toolkit core installation failed!")
+                    return False
+                print("✓ nemo_toolkit core installed")
+
+                # Install critical nemo dependencies that might be missing
+                # These are needed even if kaldialign fails
+                # List of ASR dependencies from nemo_toolkit[asr], excluding kaldialign
+                print("Installing critical nemo_toolkit ASR dependencies...")
+                asr_deps = [
+                    "hydra-core<=1.3.2,>1.3",
+                    "omegaconf<=2.3",
+                    "pytorch-lightning<=2.4.0,>2.2.1",
+                    "lightning<=2.4.0,>2.2.1",
+                    "torchmetrics>=0.11.0",
+                    "fiddle",
+                    "cloudpickle",
+                    "nv_one_logger_core>=2.3.1",
+                    "nv_one_logger_training_telemetry>=2.3.1",
+                    "nv_one_logger_pytorch_lightning_integration>=2.3.1",
+                    "lhotse>=1.31.1",
+                    "einops",
+                    "braceexpand",
+                    "ctc_segmentation==1.7.4",
+                    "editdistance",
+                    "jiwer<4.0.0,>=3.1.0",
+                    "kaldi-python-io",
+                    "marshmallow",
+                    "optuna",
+                    "pyannote.core",
+                    "pyannote.metrics",
+                    "pydub",
+                    "pyloudnorm",
+                    "resampy",
+                    "sox<=1.5.0",
+                    "whisper_normalizer",
+                    "num2words",
+                    "datasets",
+                    "inflect",
+                    "mediapy==1.1.6",
+                    "pandas",
+                    "sacremoses>=0.0.43",
+                    "sentencepiece<1.0.0",
+                    "transformers~=4.53.0",
+                    "webdataset>=0.2.86",
+                ]
+                for dep in asr_deps:
+                    subprocess.run([pip_path, "install", dep], check=False, env=env,
+                                 capture_output=True, timeout=300)
+
+                # Now try to install ASR extras (kaldialign may fail, but that's OK)
+                print("Installing nemo_toolkit ASR extras (kaldialign may fail)...")
+                nemo_result = subprocess.run(
+                    [pip_path, "install", "nemo_toolkit[asr]>=1.21.0"],
+                    check=False, env=env, capture_output=True, text=True
+                )
+
+                # Verify nemo can actually be imported
+                python_path = os.path.join(venv_path, "bin", "python")
+                import_test = subprocess.run(
+                    [python_path, "-c", "import nemo; import nemo.collections.asr"],
+                    check=False, env=env, capture_output=True, text=True
+                )
+                if import_test.returncode != 0:
+                    print("WARNING: nemo import test failed, installing missing dependencies...")
+                    print(f"Error: {import_test.stderr[:300]}")
+                    # Try to install any remaining dependencies
+                    subprocess.run([pip_path, "install", "nemo_toolkit[asr]>=1.21.0"],
+                                 check=False, env=env)
+                else:
+                    print("✓ nemo_toolkit verified as importable")
+
+                # Clean up temp requirements file
                 if os.path.exists(temp_req_path):
                     os.remove(temp_req_path)
 
-                print("Warning: kaldialign installation failed. Some alignment features may not work.")
-                print("Core transcription functionality should still work.")
+                if nemo_result.returncode != 0 and "kaldialign" in (nemo_result.stderr + nemo_result.stdout).lower():
+                    print("Warning: kaldialign installation failed. Creating stub module...")
+                    # Create a minimal kaldialign stub so nemo can import it
+                    # Find the python version directory dynamically
+                    venv_lib = os.path.join(venv_path, "lib")
+                    python_version_dir = None
+                    if os.path.exists(venv_lib):
+                        for item in os.listdir(venv_lib):
+                            if item.startswith("python"):
+                                python_version_dir = os.path.join(venv_lib, item)
+                                break
+                    if python_version_dir:
+                        kaldialign_stub_path = os.path.join(python_version_dir, "site-packages", "kaldialign")
+                        os.makedirs(kaldialign_stub_path, exist_ok=True)
+                    stub_content = '''"""
+Minimal kaldialign stub for compatibility when kaldialign cannot be built.
+This provides a basic align function that nemo_toolkit expects.
+"""
+import warnings
+
+def align(reference, hypothesis):
+    """
+    Stub implementation of kaldialign.align.
+    Returns a basic alignment without actual kaldi processing.
+    """
+    warnings.warn(
+        "kaldialign is not available. Using stub implementation. "
+        "Alignment features may not work correctly.",
+        UserWarning
+    )
+    # Return a simple character-by-character alignment
+    ref_chars = list(reference)
+    hyp_chars = list(hypothesis)
+    return (ref_chars, hyp_chars)
+
+__version__ = "0.8.0"
+'''
+                    with open(os.path.join(kaldialign_stub_path, "__init__.py"), "w") as f:
+                        f.write(stub_content)
+                    print("✓ Created kaldialign stub module")
+                    print("Warning: Some alignment features may not work correctly.")
+                    print("Core transcription functionality should still work.")
             else:
                 # Some other error occurred
                 raise subprocess.CalledProcessError(result.returncode, result.args, result.stdout, result.stderr)
         print("Dependencies installed successfully")
+
+        # Verify critical packages are installed and importable
+        print("Verifying critical packages...")
+        python_path = os.path.join(venv_path, "bin", "python")
+
+        # Test actual imports, not just pip show
+        # Note: nemo_toolkit package imports as 'nemo'
+        import_tests = [
+            ("nemo", "nemo_toolkit"),  # Package name is nemo_toolkit, imports as nemo
+            ("librosa", "librosa"),
+            ("soundfile", "soundfile"),
+            ("gi", "PyGObject"),  # Package name is PyGObject, imports as gi
+            ("spacy", "spacy"),
+        ]
+
+        missing_packages = []
+        for import_name, package_name in import_tests:
+            # First check if package is installed via pip
+            verify_result = subprocess.run(
+                [pip_path, "show", package_name],
+                check=False, env=env, capture_output=True
+            )
+            if verify_result.returncode != 0:
+                missing_packages.append(package_name)
+                continue
+
+            # Then verify it can actually be imported
+            import_result = subprocess.run(
+                [python_path, "-c", f"import {import_name}"],
+                check=False, env=env, capture_output=True
+            )
+            if import_result.returncode != 0:
+                print(f"WARNING: {package_name} is installed but cannot be imported")
+                print(f"  Error: {import_result.stderr.decode()[:200]}")
+                missing_packages.append(package_name)
+
+        if missing_packages:
+            print(f"ERROR: Missing or unimportable critical packages: {', '.join(missing_packages)}")
+            print("Attempting to install missing packages...")
+            for package_name in missing_packages:
+                if package_name == "nemo_toolkit":
+                    subprocess.run([pip_path, "install", "nemo_toolkit[asr]>=1.21.0"],
+                                 check=True, env=env)
+                else:
+                    subprocess.run([pip_path, "install", package_name], check=True, env=env)
+            print("Missing packages reinstalled")
+        else:
+            print("✓ All critical packages verified and importable")
+
     except subprocess.CalledProcessError as e:
         print(f"Error installing dependencies: {e}")
         if hasattr(e, 'stderr') and e.stderr:
