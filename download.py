@@ -3,9 +3,38 @@
 YouTube download and subtitle handling for Transcribe YouTube
 """
 
+import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+
+def _find_ytdlp() -> str:
+    """
+    Find the yt-dlp binary, preferring system-installed versions over venv copies.
+
+    Returns:
+        Path to the yt-dlp binary
+    """
+    # Prefer system paths (Homebrew, system bin) over venv
+    system_paths = [
+        "/opt/homebrew/bin/yt-dlp",
+        "/usr/local/bin/yt-dlp",
+        "/usr/bin/yt-dlp",
+    ]
+    for path in system_paths:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+
+    # Fall back to whatever is on PATH (may be venv or pipx)
+    found = shutil.which("yt-dlp")
+    if found:
+        return found
+
+    raise FileNotFoundError(
+        "yt-dlp not found. Install it with: brew install yt-dlp"
+    )
 
 
 def get_video_title(url: str) -> str:
@@ -20,7 +49,7 @@ def get_video_title(url: str) -> str:
     """
     try:
         cmd = [
-            "yt-dlp",
+            _find_ytdlp(),
             "--get-title",
             "--no-warnings",
             url
@@ -54,7 +83,7 @@ def download_subtitles(url: str, output_dir: str = ".") -> str:
     output_template = f"{output_dir}/%(title)s_{timestamp}.%(ext)s"
 
     cmd = [
-        "yt-dlp",
+        _find_ytdlp(),
         "--write-auto-subs",
         "--sub-langs", "en",
         "--sub-format", "srt",
@@ -105,7 +134,7 @@ def download_audio(url: str, output_dir: str = ".") -> str:
     output_template = f"{output_dir}/%(title)s_{timestamp}.%(ext)s"
 
     cmd = [
-        "yt-dlp",
+        _find_ytdlp(),
         "--extract-audio",
         "--audio-format", "mp3",
         "-o", output_template,

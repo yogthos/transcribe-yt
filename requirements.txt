@@ -15,7 +15,8 @@ soundfile>=0.12.0
 # Windows: Download from https://ffmpeg.org/download.html
 
 # YouTube download
-yt-dlp>=2024.4.9
+# yt-dlp should be installed via system package manager (e.g., brew install yt-dlp)
+# NOT installed via pip to ensure the system version is used and easily updated
 
 # Specific versions for compatibility (tested working)
 onnx==1.18.0
